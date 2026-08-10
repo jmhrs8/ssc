@@ -1,0 +1,160 @@
+<?php
+require_once "../../config/conexion.php";
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        $id = !empty($_POST['id']) ? $_POST['id'] : null;
+
+        // 1. Recoger los datos del formulario y mapearlos EXACTAMENTE a tus columnas de la Base de Datos
+        $no_consecutivo = $_POST['no_consecutivo'] ?? null;
+        $mes = $_POST['mes'] ?? null;
+        $folio = $_POST['folio'] ?? null;
+        $fecha = !empty($_POST['fecha']) ? $_POST['fecha'] : null; // fecha_siniestro -> fecha
+        $hora = !empty($_POST['hora']) ? $_POST['hora'] : null;   // hora_siniestro -> hora
+        $fecha_reporte = !empty($_POST['fecha_reporte']) ? $_POST['fecha_reporte'] : null;
+        $hora_reporte = $_POST['hora_reporte'] ?? null;
+
+        $marca = $_POST['marca'] ?? null;
+        $modelo = $_POST['modelo'] ?? null;
+        $tipo = $_POST['tipo'] ?? null;
+        $economico_placas = $_POST['economico_placas'] ?? null;
+        $no_inventario = $_POST['no_inventario'] ?? null;
+        $no_serie = $_POST['no_serie'] ?? null;
+
+        $calles = $_POST['calles'] ?? null;
+        $colonia = $_POST['colonia'] ?? null;
+        $alcaldia = $_POST['alcaldia'] ?? null;
+
+        $adscripcion = $_POST['adscripcion'] ?? null;
+        $zona = $_POST['zona'] ?? null;
+        $nombre_elemento = $_POST['nombre_elemento'] ?? null;
+        $cond_no_empleado = $_POST['cond_no_empleado'] ?? null; // no_empleado_conductor -> cond_no_empleado
+        $cond_licencia = $_POST['cond_licencia'] ?? null;       // no_licencia -> cond_licencia
+
+        $vehiculo_3ro = $_POST['vehiculo_3ro'] ?? null;
+        $placas_3ro = $_POST['placas_3ro'] ?? null;
+        $seguro = $_POST['seguro'] ?? null;                     // seguro_3ro -> seguro
+        $danos = $_POST['danos'] ?? null;                       // danos_3ro -> danos
+
+        $aseguradora = $_POST['aseguradora'] ?? null;
+        $no_siniestro = $_POST['no_siniestro'] ?? null;
+        $taller_asignado = $_POST['taller_asignado'] ?? null;
+        $taller_ingreso = $_POST['taller_ingreso'] ?? null;
+        $hospital = $_POST['hospital'] ?? null;
+        $carp_investigacion = $_POST['carp_investigacion'] ?? null;
+        $lesionados = $_POST['lesionados'] ?? null;
+
+        $propio = $_POST['propio'] ?? 'NO';
+        $arrendado = $_POST['arrendado'] ?? 'NO';
+        $declaracion_universal = $_POST['declaracion_universal'] ?? 'NO';
+        $pase_medicos = $_POST['pase_medicos'] ?? 'NO';
+        $pase_taller = $_POST['pase_taller'] ?? 'NO';
+        $graficas = $_POST['graficas'] ?? 'NO';
+        $cuadernillo = $_POST['cuadernillo'] ?? 'NO';
+        $visto_bueno = $_POST['visto_bueno'] ?? 'NO';
+
+        $fecha_visto_bueno = !empty($_POST['fecha_visto_bueno']) ? $_POST['fecha_visto_bueno'] : null;
+        $fecha_vb_taller = !empty($_POST['fecha_vb_taller']) ? $_POST['fecha_vb_taller'] : null; // corregido
+        $fecha_oficio_recibido = !empty($_POST['fecha_oficio_recibido']) ? $_POST['fecha_oficio_recibido'] : null;
+        $numero_expediente = $_POST['numero_expediente'] ?? null; // no_expediente -> numero_expediente
+        $papeleta_control_gestion = $_POST['papeleta_control_gestion'] ?? null;
+        $estatus = $_POST['estatus'] ?? 'PENDIENTE';
+
+        $foto_unidad = $_POST['foto_unidad'] ?? null;
+        $foto_vehiculo = $_POST['foto_vehiculo'] ?? null;
+        $observaciones = $_POST['observaciones'] ?? null;
+        $observaciones_generales = $_POST['observaciones_generales'] ?? null;
+
+        // ==========================================
+        // VALIDACIÓN COMPUESTA (Siniestro + Aseguradora)
+        // ==========================================
+        $siniestro_val = isset($no_siniestro) ? trim($no_siniestro) : '';
+        $aseguradora_val = isset($aseguradora) ? trim($aseguradora) : '';
+
+        if ($siniestro_val !== '' && $aseguradora_val !== '' && $siniestro_val !== 'SIN DATO' && $aseguradora_val !== 'SIN DATO') {
+            if ($id) {
+                $check_sql = "SELECT COUNT(*) FROM siniestros WHERE no_siniestro = ? AND aseguradora = ? AND id != ?";
+                $check_stmt = $pdo->prepare($check_sql);
+                $check_stmt->execute([$siniestro_val, $aseguradora_val, $id]);
+            } else {
+                $check_sql = "SELECT COUNT(*) FROM siniestros WHERE no_siniestro = ? AND aseguradora = ?";
+                $check_stmt = $pdo->prepare($check_sql);
+                $check_stmt->execute([$siniestro_val, $aseguradora_val]);
+            }
+
+            if ($check_stmt->fetchColumn() > 0) {
+                header("Location: index.php?msg=error_duplicado&siniestro=" . urlencode($siniestro_val) . "&aseguradora=" . urlencode($aseguradora_val));
+                exit;
+            }
+        }
+
+        // 2. Consulta de persistencia a la Base de Datos
+        if ($id) {
+            // Consulta de ACTUALIZACIÓN (UPDATE)
+            $sql = "UPDATE siniestros SET
+                    no_consecutivo=?, mes=?, folio=?, fecha=?, hora=?, fecha_reporte=?, hora_reporte=?,
+                    marca=?, modelo=?, tipo=?, economico_placas=?, no_inventario=?, no_serie=?,
+                    calles=?, colonia=?, alcaldia=?, adscripcion=?, zona=?, nombre_elemento=?,
+                    cond_no_empleado=?, cond_licencia=?, vehiculo_3ro=?, placas_3ro=?, seguro=?, danos=?,
+                    aseguradora=?, no_siniestro=?, taller_asignado=?, taller_ingreso=?, hospital=?,
+                    carp_investigacion=?, lesionados=?, propio=?, arrendado=?, declaracion_universal=?,
+                    pase_medicos=?, pase_taller=?, graficas=?, cuadernillo=?, visto_bueno=?,
+                    fecha_visto_bueno=?, fecha_vb_taller=?, fecha_oficio_recibido=?, numero_expediente=?,
+                    papeleta_control_gestion=?, estatus=?, foto_unidad=?, foto_vehiculo=?, observaciones=?, observaciones_generales=?
+                    WHERE id = ?";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                $no_consecutivo, $mes, $folio, $fecha, $hora, $fecha_reporte, $hora_reporte,
+                $marca, $modelo, $tipo, $economico_placas, $no_inventario, $no_serie,
+                $calles, $colonia, $alcaldia, $adscripcion, $zona, $nombre_elemento,
+                $cond_no_empleado, $cond_licencia, $vehiculo_3ro, $placas_3ro, $seguro, $danos,
+                $aseguradora, $no_siniestro, $taller_asignado, $taller_ingreso, $hospital,
+                $carp_investigacion, $lesionados, $propio, $arrendado, $declaracion_universal,
+                $pase_medicos, $pase_taller, $graficas, $cuadernillo, $visto_bueno,
+                $fecha_visto_bueno, $fecha_vb_taller, $fecha_oficio_recibido, $numero_expediente,
+                $papeleta_control_gestion, $estatus, $foto_unidad, $foto_vehiculo, $observaciones, $observaciones_generales,
+                $id
+            ]);
+        } else {
+            // Consulta de INSERCIÓN (INSERT INTO)
+            $sql = "INSERT INTO siniestros (
+                    no_consecutivo, mes, folio, fecha, hora, fecha_reporte, hora_reporte,
+                    marca, modelo, tipo, economico_placas, no_inventario, no_serie,
+                    calles, colonia, alcaldia, adscripcion, zona, nombre_elemento,
+                    cond_no_empleado, cond_licencia, vehiculo_3ro, placas_3ro, seguro, danos,
+                    aseguradora, no_siniestro, taller_asignado, taller_ingreso, hospital,
+                    carp_investigacion, lesionados, propio, arrendado, declaracion_universal,
+                    pase_medicos, pase_taller, graficas, cuadernillo, visto_bueno,
+                    fecha_visto_bueno, fecha_vb_taller, fecha_oficio_recibido, numero_expediente,
+                    papeleta_control_gestion, estatus, foto_unidad, foto_vehiculo, observaciones, observaciones_generales
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                $no_consecutivo, $mes, $folio, $fecha, $hora, $fecha_reporte, $hora_reporte,
+                $marca, $modelo, $tipo, $economico_placas, $no_inventario, $no_serie,
+                $calles, $colonia, $alcaldia, $adscripcion, $zona, $nombre_elemento,
+                $cond_no_empleado, $cond_licencia, $vehiculo_3ro, $placas_3ro, $seguro, $danos,
+                $aseguradora, $no_siniestro, $taller_asignado, $taller_ingreso, $hospital,
+                $carp_investigacion, $lesionados, $propio, $arrendado, $declaracion_universal,
+                $pase_medicos, $pase_taller, $graficas, $cuadernillo, $visto_bueno,
+                $fecha_visto_bueno, $fecha_vb_taller, $fecha_oficio_recibido, $numero_expediente,
+                $papeleta_control_gestion, $estatus, $foto_unidad, $foto_vehiculo, $observaciones, $observaciones_generales
+            ]);
+        }
+
+        // Redirección exitosa
+        header("Location: index.php?msg=success");
+        exit;
+
+    } catch (PDOException $e) {
+        // Muestra detalladamente el error de MySQL en pantalla si falla la base de datos
+        echo "<h3>Error de Base de Datos detectado:</h3>";
+        echo "<pre>";
+        print_r($e->errorInfo);
+        echo "\n\nMensaje completo: " . $e->getMessage();
+        echo "</pre>";
+        die();
+    }
+}

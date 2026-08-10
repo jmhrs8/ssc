@@ -1,0 +1,203 @@
+<?php
+session_start();
+header('Content-Type: application/json; charset=utf-8');
+
+if (!isset($_SESSION['usuario'])) {
+    echo json_encode(['status' => 'error', 'message' => 'Sesión no iniciada.']);
+    exit;
+}
+
+$host = '127.0.0.1'; $db = 'ssc_control_gestion'; $user = 'root'; $pass = 'jmhl2474';
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+    ]);
+
+    $id_registro = isset($_POST['id_registro']) ? intval($_POST['id_registro']) : 0;
+    $numero_oficio = $_POST['numero_oficio'] ?? '';
+    $dias_termino = intval($_POST['dias_termino'] ?? 5);
+    $fecha_oficio = $_POST['fecha_oficio'] ?? '';
+    $fecha_recepcion = $_POST['fecha_recepcion'] ?? '';
+    $titular = $_POST['titular'] ?? '';
+    $cargo = $_POST['cargo'] ?? '';
+    $id_usuario_asignado = intval($_POST['id_usuario_asignado'] ?? 0);
+    $asunto = $_POST['asunto'] ?? '';
+
+    // ==========================================
+    // CAMPOS ADAPTADOS PARA LA PAPELETA
+    // ==========================================
+    $accion_papeleta = isset($_POST['accion_papeleta']) ? trim($_POST['accion_papeleta']) : null;
+    $prioridad = isset($_POST['prioridad']) ? trim($_POST['prioridad']) : 'NORMAL';
+
+    // CIRUGÍA DE CONVERSIÓN: Soporta ID numérico directo (Select) o Texto dinámico
+    $entrada_turnado = isset($_POST['id_turnado_por']) ? trim($_POST['id_turnado_por']) : '';
+    $id_turnado_por = null;
+
+    if (!empty($entrada_turnado)) {
+        if (is_numeric($entrada_turnado)) {
+            $id_turnado_por = intval($entrada_turnado);
+        } else {
+            $texto_area = mb_strtoupper($entrada_turnado, 'UTF-8');
+            $stmt_area = $pdo->prepare("SELECT id_area FROM catalogo_areas WHERE UPPER(TRIM(nombre_area)) = ?");
+            $stmt_area->execute([$texto_area]);
+            $area_existente = $stmt_area->fetch(PDO::FETCH_ASSOC);
+
+            if ($area_existente) {
+                $id_turnado_por = intval($area_existente['id_area']);
+            } else {
+                $stmt_ins_area = $pdo->prepare("INSERT INTO catalogo_areas (nombre_area) VALUES (?)");
+                $stmt_ins_area->execute([$texto_area]);
+                $id_turnado_por = intval($pdo->lastInsertId());
+            }
+        }
+    }
+
+    // Recibir observaciones de conclusión
+    $observaciones_conclusion = isset($_POST['observaciones_conclusion']) ? mb_strtoupper(trim($_POST['observaciones_conclusion']), 'UTF-8') : '';
+
+    // Guardado de PDF 1 (Origen)
+    $nombre_soporte = "";
+    if (isset($_FILES['pdf_soporte']) && $_FILES['pdf_soporte']['error'] === UPLOAD_ERR_OK) {
+        $ext = pathinfo($_FILES['pdf_soporte']['name'], PATHINFO_EXTENSION);
+        $nombre_soporte = 'origen_' . time() . '_' . uniqid() . '.' . $ext;
+        if (!is_dir('uploads/oficios/')) { mkdir('uploads/oficios/', 0777, true); }
+        move_uploaded_file($_FILES['pdf_soporte']['tmp_name'], 'uploads/oficios/' . $nombre_soporte);
+    }
+
+    // Guardado de PDF 2 (Conclusión)
+    $nombre_conclusion = "";
+    if (isset($_FILES['pdf_conclusion']) && $_FILES['pdf_conclusion']['error'] === UPLOAD_ERR_OK) {
+        $ext = pathinfo($_FILES['pdf_conclusion']['name'], PATHINFO_EXTENSION);
+        $nombre_conclusion = 'conclusion_' . time() . '_' . uniqid() . '.' . $ext;
+        if (!is_dir('uploads/oficios/')) { mkdir('uploads/oficios/', 0777, true); }
+        move_uploaded_file($_FILES['pdf_conclusion']['tmp_name'], 'uploads/oficios/' . $nombre_conclusion);
+    }
+
+    if ($id_registro === 0) {
+        // ==========================================
+        // ALTA DE REGISTRO CON DECISIÓN DE FOLIO
+        // ==========================================
+        $folio_a_usar = isset($_POST['folio_forzado']) ? intval($_POST['folio_forzado']) : 0;
+
+        if ($folio_a_usar === 0) {
+            $stmt_max = $pdo->query("SELECT MAX(id_registro) AS ultimo_folio FROM control_gestion");
+            $row_max = $stmt_max->fetch(PDO::FETCH_ASSOC);
+            $folio_a_usar = intval($row_max['ultimo_folio']) + 1;
+        }
+
+        // Obtener el ID del usuario activo en la sesión para guardarlo en creado_por
+        $id_creador = intval($_SESSION['id_usuario'] ?? 0);
+
+        $sql = "INSERT INTO control_gestion (id_registro, numero_oficio, dias_termino, fecha_oficio, fecha_recepcion, titular, cargo, id_turnado_por, id_usuario_asignado, asunto, pdf_soporte, pdf_conclusion, observaciones_conclusion, accion_papeleta, prioridad, creado_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $pdo->prepare($sql)->execute([$folio_a_usar, $numero_oficio, $dias_termino, $fecha_oficio, $fecha_recepcion, $titular, $cargo, $id_turnado_por, $id_usuario_asignado, $asunto, $nombre_soporte, $nombre_conclusion, $observaciones_conclusion, $accion_papeleta, $prioridad, $id_creador]);
+        $nuevoId = $folio_a_usar;
+
+        // TRAZABILIDAD: Asignación Inicial
+        if ($id_usuario_asignado > 0) {
+            $pdo->prepare("INSERT INTO historial_asignaciones (id_registro, id_usuario, fecha_inicio, estatus_tramite) VALUES (?, ?, NOW(), 'ASIGNADO')")->execute([$nuevoId, $id_usuario_asignado]);
+        }
+
+        // Alerta por correo al asignar en Alta Nueva
+        $usr = $pdo->prepare("SELECT nombre_completo, correo FROM usuarios WHERE id_usuario = ?");
+        $usr->execute([$id_usuario_asignado]);
+        $dest = $usr->fetch(PDO::FETCH_ASSOC);
+
+        if ($dest && !empty($dest['correo'])) {
+            $to = $dest['correo'];
+            $sub = "=[SSC CONTROL DE GESTIÓN]= Folio Asignado: " . $nuevoId;
+            $msg = "Hola " . $dest['nombre_completo'] . ",\n\nSe te ha asignado el Folio " . $nuevoId . ".\nOficio: " . $numero_oficio . "\nAsunto: " . $asunto;
+
+            $headers = "From: controlgestion@ssc.gob.mx\r\n" .
+                       "Reply-To: controlgestion@ssc.gob.mx\r\n" .
+                       "Content-Type: text/plain; charset=UTF-8\r\n" .
+                       "X-Mailer: PHP/" . phpversion();
+
+            @mail($to, $sub, $msg, $headers);
+        }
+
+        echo json_encode(['status' => 'success', 'message' => 'Registro guardado exitosamente con Folio: ' . $nuevoId]);
+    } else {
+        // ==========================================
+        // EDICIÓN / REASIGNACIÓN DE REGISTRO EXISTENTE
+        // ==========================================
+        $prev = $pdo->prepare("SELECT pdf_soporte, pdf_conclusion, id_usuario_asignado FROM control_gestion WHERE id_registro = ?");
+        $prev->execute([$id_registro]);
+        $viejos = $prev->fetch(PDO::FETCH_ASSOC);
+
+        // --- CANDADO DE SEGURIDAD OPERATIVO ---
+        if (!empty($nombre_conclusion) || (!empty($observaciones_conclusion) && empty($viejos['pdf_conclusion']))) {
+            $id_usuario_sesion = intval($_SESSION['id_usuario'] ?? 0);
+            $rol_usuario_sesion = $_SESSION['rol'] ?? 'CAPTURISTA';
+            $usuario_asignado_original = intval($viejos['id_usuario_asignado']);
+
+            if ($rol_usuario_sesion !== 'ADMIN' && $id_usuario_sesion !== $usuario_asignado_original) {
+                echo json_encode([
+                    'status' => 'error',
+                    'message' => 'Permiso denegado. Solo el Administrador o el Capturista asignado a este oficio pueden concluirlo.'
+                ]);
+                exit;
+            }
+        }
+
+        if (empty($nombre_soporte)) { $nombre_soporte = $viejos['pdf_soporte']; }
+        if (empty($nombre_conclusion)) { $nombre_conclusion = $viejos['pdf_conclusion']; }
+
+        $hubo_reasignacion = (intval($viejos['id_usuario_asignado']) !== $id_usuario_asignado && $id_usuario_asignado > 0);
+
+        $sql = "UPDATE control_gestion SET numero_oficio=?, dias_termino=?, fecha_oficio=?, fecha_recepcion=?, titular=?, cargo=?, id_turnado_por=?, id_usuario_asignado=?, asunto=?, pdf_soporte=?, pdf_conclusion=?, observaciones_conclusion=?, accion_papeleta=?, prioridad=? WHERE id_registro=?";
+        $pdo->prepare($sql)->execute([$numero_oficio, $dias_termino, $fecha_oficio, $fecha_recepcion, $titular, $cargo, $id_turnado_por, $id_usuario_asignado, $asunto, $nombre_soporte, $nombre_conclusion, $observaciones_conclusion, $accion_papeleta, $prioridad, $id_registro]);
+
+        // TRAZABILIDAD Y DISPARADOR 1: Reasignación
+        if ($hubo_reasignacion) {
+            // 1. Cerrar el tramo del usuario anterior en el historial
+            $pdo->prepare("UPDATE historial_asignaciones SET fecha_fin = NOW(), estatus_tramite = 'REASIGNADO' WHERE id_registro = ? AND fecha_fin IS NULL")->execute([$id_registro]);
+
+            // 2. Crear el tramo para el nuevo responsable
+            $pdo->prepare("INSERT INTO historial_asignaciones (id_registro, id_usuario, fecha_inicio, estatus_tramite) VALUES (?, ?, NOW(), 'ASIGNADO')")->execute([$id_registro, $id_usuario_asignado]);
+
+            // 3. Notificación vía correo
+            $usr_nuevo = $pdo->prepare("SELECT nombre_completo, correo FROM usuarios WHERE id_usuario = ?");
+            $usr_nuevo->execute([$id_usuario_asignado]);
+            $dest_nuevo = $usr_nuevo->fetch(PDO::FETCH_ASSOC);
+
+            if ($dest_nuevo && !empty($dest_nuevo['correo'])) {
+                $to_reasignado = $dest_nuevo['correo'];
+                $sub_reasignado = "=[SSC CONTROL DE GESTIÓN]= Folio Reasignado: " . $id_registro;
+                $msg_reasignado = "Hola " . $dest_nuevo['nombre_completo'] . ",\n\nSe te ha REASIGNADO el Folio " . $id_registro . ".\nOficio: " . $numero_oficio . "\nAsunto: " . $asunto;
+
+                $headers_reasignado = "From: controlgestion@ssc.gob.mx\r\n" .
+                                       "Reply-To: controlgestion@ssc.gob.mx\r\n" .
+                                       "Content-Type: text/plain; charset=UTF-8\r\n" .
+                                       "X-Mailer: PHP/" . phpversion();
+
+                @mail($to_reasignado, $sub_reasignado, $msg_reasignado, $headers_reasignado);
+            }
+        }
+
+        // TRAZABILIDAD Y DISPARADOR 2: Conclusión formal
+        if (!empty($nombre_conclusion) && empty($viejos['pdf_conclusion'])) {
+            // Marcar el registro activo del historial como CONCLUIDO y cerrarle la fecha_fin
+            $pdo->prepare("UPDATE historial_asignaciones SET fecha_fin = NOW(), estatus_tramite = 'CONCLUIDO' WHERE id_registro = ? AND fecha_fin IS NULL")->execute([$id_registro]);
+
+            $listaCorreos = $pdo->query("SELECT correo FROM usuarios WHERE correo IS NOT NULL AND correo != ''")->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($listaCorreos)) {
+                $to_all = implode(',', $listaCorreos);
+                $sub_all = "=[SSC GESTIÓN]= Conclusión del Folio: " . $id_registro;
+                $msg_all = "AVISO GENERAL:\n\nEl Folio " . $id_registro . " ha sido concluido de manera formal y cuenta con evidencia en plataforma.";
+
+                $headers_all = "From: controlgestion@ssc.gob.mx\r\n" .
+                               "Reply-To: controlgestion@ssc.gob.mx\r\n" .
+                               "Content-Type: text/plain; charset=UTF-8\r\n" .
+                               "X-Mailer: PHP/" . phpversion();
+
+                @mail($to_all, $sub_all, $msg_all, $headers_all);
+            }
+        }
+
+        echo json_encode(['status' => 'success', 'message' => 'Registro guardado exitosamente']);
+    }
+} catch (PDOException $e) {
+    echo json_encode(['status' => 'error', 'message' => 'Error en Base de Datos: ' . $e->getMessage()]);
+}
+?>

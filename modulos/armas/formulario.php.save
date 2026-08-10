@@ -1,0 +1,235 @@
+
+
+
+<?php
+require_once "../../config/conexion.php";
+
+$id = $_GET['id'] ?? null;
+$d = [];
+
+if ($id) {
+    // Buscamos el registro por ID incluyendo los datos de la tabla espejo si existen
+    $stmt = $pdo->prepare("
+        SELECT g.*, e.nombre_resguardante, e.lugar_siniestro, e.narracion 
+        FROM inventario_armas g
+        LEFT JOIN espejo_siniestros_armas e ON g.id = e.id_arma
+        WHERE g.id = ?
+    ");
+    $stmt->execute([$id]);
+    $d = $stmt->fetch(PDO::FETCH_ASSOC);
+}
+?>
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Formulario de Armamento | SSC SYSTEM</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #f4f7f6; font-size: 11px; text-transform: uppercase; }
+        .card { border-radius: 10px; border: none; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .section-header {
+            background: #212529;
+            color: #0dcaf0;
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+        label { font-weight: 700; color: #444; margin-bottom: 2px; font-size: 10px; }
+        input, select, textarea { text-transform: uppercase; }
+        .form-control:focus { border-color: #0dcaf0; box-shadow: 0 0 0 0.25 row rgba(13, 202, 240, 0.25); }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid mt-3 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-3 px-3">
+        <h4 class="fw-bold"><i class="fas fa-shield-alt text-info"></i> <?= $id ? 'MODIFICAR REGISTRO #'.$id : 'REGISTRAR NUEVO ARMAMENTO' ?></h4>
+        <a href="index.php" class="btn btn-dark btn-sm"><i class="fas fa-arrow-left"></i> VOLVER AL LISTADO</a>
+    </div>
+
+    <form action="guardar_armas.php" method="POST" class="card p-4 shadow-sm">
+        <input type="hidden" name="id" value="<?= $id ?>">
+
+        <div class="section-header"><i class="fas fa-file-invoice"></i> 1. DATOS DE CONTROL Y PÓLIZA</div>
+        <div class="row g-2 mt-1">
+            <div class="col-md-2">
+                <label>PÓLIZA</label>
+                <input type="text" name="poliza" class="form-control form-control-sm" value="<?= $d['poliza'] ?? '' ?>">
+            </div>
+            <div class="col-md-2">
+                <label>TIPO DE BIEN</label>
+                <input type="text" name="tipo_bien" class="form-control form-control-sm" value="<?= $d['tipo_bien'] ?? '' ?>">
+            </div>
+            <div class="col-md-2">
+                <label>TIPO SINIESTRO</label>
+                <input type="text" name="tipo_siniestro" class="form-control form-control-sm" value="<?= $d['tipo_siniestro'] ?? '' ?>">
+            </div>
+            <div class="col-md-1">
+                <label>AÑO VIGENCIA</label>
+                <input type="text" name="anio_vigencia" class="form-control form-control-sm" value="<?= $d['anio_vigencia'] ?? '' ?>">
+            </div>
+            <div class="col-md-2">
+                <label>FECHA SINIESTRO 1</label>
+                <input type="date" name="fecha_siniestro_1" class="form-control form-control-sm" value="<?= $d['fecha_siniestro_1'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>NO. SINIESTRO</label>
+                <input type="text" name="no_siniestro" class="form-control form-control-sm" value="<?= $d['no_siniestro'] ?? '' ?>">
+            </div>
+        </div>
+
+        <div class="row g-2 mt-2">
+            <div class="col-md-3">
+                <label>DESPACHO</label>
+                <input type="text" name="despacho" class="form-control form-control-sm" value="<?= $d['despacho'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>ASEGURADORA</label>
+                <input type="text" name="aseguradora" class="form-control form-control-sm" value="<?= $d['aseguradora'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>STATUS SEGURO</label>
+                <select name="status_seguro" class="form-select form-select-sm">
+                    <option value="">-- SELECCIONE --</option>
+                    <option value="PENDIENTE" <?= ($d['status_seguro']??'')=='PENDIENTE'?'selected':'' ?>>PENDIENTE</option>
+                    <option value="EN TRAMITE" <?= ($d['status_seguro']??'')=='EN TRAMITE'?'selected':'' ?>>EN TRAMITE</option>
+                    <option value="CONCLUIDO" <?= ($d['status_seguro']??'')=='CONCLUIDO'?'selected':'' ?>>CONCLUIDO</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>STATUS INTERNO</label>
+                <select name="status_interno" class="form-select form-select-sm">
+                    <option value="PENDIENTE" <?= ($d['status_interno']??'')=='PENDIENTE'?'selected':'' ?>>PENDIENTE</option>
+                    <option value="ENTREGADO" <?= ($d['status_interno']??'')=='ENTREGADO'?'selected':'' ?>>ENTREGADO</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="section-header"><i class="fas fa-barcode"></i> 2. IDENTIFICACIÓN Y EXPEDIENTE</div>
+        <div class="row g-2 mt-1">
+            <div class="col-md-3">
+                <label>SERIE / MATRÍCULA 1 (PRINCIPAL)</label>
+                <input type="text" name="serie_matricula_1" class="form-control form-control-sm fw-bold border-primary" value="<?= $d['serie_matricula_1'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>NO. EXPEDIENTE</label>
+                <input type="text" name="no_expediente" class="form-control form-control-sm" value="<?= $d['no_expediente'] ?? '' ?>">
+            </div>
+            <div class="col-md-2">
+                <label>FOLIO SDRA</label>
+                <input type="text" name="folio_sdra" class="form-control form-control-sm" value="<?= $d['folio_sdra'] ?? '' ?>">
+            </div>
+            <div class="col-md-4">
+                <label>OFICIO RECIBIDO</label>
+                <input type="text" name="of_recibido" class="form-control form-control-sm" value="<?= $d['of_recibido'] ?? '' ?>">
+            </div>
+        </div>
+
+        <div class="section-header"><i class="fas fa-info-circle"></i> 3. DETALLES TÉCNICOS Y FECHAS</div>
+        <div class="row g-2 mt-1">
+            <div class="col-md-4">
+                <label>NARRATIVA CORTA (SINIESTRO)</label>
+                <input type="text" name="siniestro_detalle" class="form-control form-control-sm" value="<?= $d['siniestro_detalle'] ?? '' ?>">
+            </div>
+            <div class="col-md-2">
+                <label>TIPO DE DAÑO</label>
+                <input type="text" name="tipo_dano" class="form-control form-control-sm" value="<?= $d['tipo_dano'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>MARCA</label>
+                <input type="text" name="marca" class="form-control form-control-sm" value="<?= $d['marca'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>MODELO</label>
+                <input type="text" name="modelo" class="form-control form-control-sm" value="<?= $d['modelo'] ?? '' ?>">
+            </div>
+        </div>
+
+        <div class="row g-2 mt-2">
+            <div class="col-md-3">
+                <label>MATRÍCULA / SERIE 2 (SECUNDARIA)</label>
+                <input type="text" name="matricula_o_serie_2" class="form-control form-control-sm" value="<?= $d['matricula_o_serie_2'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>FECHA SINIESTRO 2</label>
+                <input type="date" name="fecha_siniestro_2" class="form-control form-control-sm" value="<?= $d['fecha_siniestro_2'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label class="text-danger">FECHA RECLAMACIÓN (SEMÁFORO)</label>
+                <input type="date" name="fecha_reclamacion" class="form-control form-control-sm border-danger" value="<?= $d['fecha_reclamacion'] ?? '' ?>">
+            </div>
+            <div class="col-md-3">
+                <label>NO. OFICIO</label>
+                <input type="text" name="no_oficio" class="form-control form-control-sm" value="<?= $d['no_oficio'] ?? '' ?>">
+            </div>
+        </div>
+
+        <div class="section-header"><i class="fas fa-boxes"></i> 4. CANTIDADES E INVENTARIO</div>
+        <div class="row g-2 mt-1 text-center">
+            <div class="col">
+                <label>ARMAS</label>
+                <input type="number" name="armas" class="form-control form-control-sm" value="<?= $d['armas'] ?? 0 ?>">
+            </div>
+            <div class="col">
+                <label>CARGADOR</label>
+                <input type="number" name="cargador" class="form-control form-control-sm" value="<?= $d['cargador'] ?? 0 ?>">
+            </div>
+            <div class="col">
+                <label>CARTUCHOS</label>
+                <input type="number" name="cartuchos" class="form-control form-control-sm" value="<?= $d['cartuchos'] ?? 0 ?>">
+            </div>
+            <div class="col">
+                <label>CASCOS</label>
+                <input type="number" name="cascos" class="form-control form-control-sm" value="<?= $d['cascos'] ?? 0 ?>">
+            </div>
+            <div class="col">
+                <label>ESCUDOS</label>
+                <input type="number" name="escudos" class="form-control form-control-sm" value="<?= $d['escudos'] ?? 0 ?>">
+            </div>
+            <div class="col">
+                <label>CHALECOS</label>
+                <input type="number" name="chalecos" class="form-control form-control-sm" value="<?= $d['chalecos'] ?? 0 ?>">
+            </div>
+        </div>
+
+        <div class="row g-2 mt-3">
+            <div class="col-md-4">
+                <label>CANDADO DE MANOS</label>
+                <input type="text" name="candado_manos" class="form-control form-control-sm" value="<?= $d['candado_manos'] ?? '' ?>">
+            </div>
+            <div class="col-md-8">
+                <label>ATENDIÓ (PERSONAL SSC)</label>
+                <input type="text" name="atendio" class="form-control form-control-sm" value="<?= $d['atendio'] ?? '' ?>">
+            </div>
+        </div>
+
+        <div class="section-header"><i class="fas fa-user-shield"></i> 5. DATOS DEL RESGUARDANTE Y HECHOS (TABLA ESPEJO)</div>
+        <div class="row g-2 mt-1">
+            <div class="col-md-6">
+                <label>NOMBRE DEL RESGUARDANTE</label>
+                <input type="text" name="nombre_resguardante" class="form-control form-control-sm" value="<?= $d['nombre_resguardante'] ?? '' ?>" placeholder="NOMBRE COMPLETO DEL ELEMENTO">
+            </div>
+            <div class="col-md-6">
+                <label>LUGAR DEL SINIESTRO</label>
+                <input type="text" name="lugar_siniestro" class="form-control form-control-sm" value="<?= $d['lugar_siniestro'] ?? '' ?>" placeholder="MUNICIPIO, COLONIA, REFERENCIAS">
+            </div>
+            <div class="col-md-12 mt-2">
+                <label>NARRATIVA EXTENSA DE LOS HECHOS</label>
+                <textarea name="narracion" class="form-control form-control-sm" rows="3"><?= $d['narracion'] ?? '' ?></textarea>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <button type="submit" class="btn btn-info btn-lg shadow px-5 text-white fw-bold">
+                <i class="fas fa-save"></i> GUARDAR CAMBIOS EN SISTEMA
+            </button>
+        </div>
+    </form>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,183 @@
+<?php
+require_once "../../config/conexion.php";
+
+try {
+    $total = $pdo->query("SELECT COUNT(*) FROM siniestros_personal")->fetchColumn();
+    $statsCausa = $pdo->query("SELECT causa_resumido as categoria, COUNT(*) as total FROM siniestros_personal WHERE causa_resumido IS NOT NULL AND causa_resumido != '' GROUP BY causa_resumido ORDER BY total DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+    $statsHospital = $pdo->query("SELECT hospital as categoria, COUNT(*) as total FROM siniestros_personal WHERE hospital IS NOT NULL AND hospital != '' GROUP BY hospital ORDER BY total DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+    $statsAdscripcion = $pdo->query("SELECT area_adscripcion as categoria, COUNT(*) as total FROM siniestros_personal WHERE area_adscripcion IS NOT NULL AND area_adscripcion != '' GROUP BY area_adscripcion ORDER BY total DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+
+    // Contabilidad y siniestros por mes ordenados cronológicamente
+    $meses_orden = ['ENERO' => 1, 'FEBRERO' => 2, 'MARZO' => 3, 'ABRIL' => 4, 'MAYO' => 5, 'JUNIO' => 6, 'JULIO' => 7, 'AGOSTO' => 8, 'SEPTIEMBRE' => 9, 'OCTUBRE' => 10, 'NOVIEMBRE' => 11, 'DICIEMBRE' => 12];
+    $statsMesesRaw = $pdo->query("SELECT mes_de_reporte, COUNT(*) as total, SUM(montos_erogados) as monto_total FROM siniestros_personal WHERE mes_de_reporte IS NOT NULL AND mes_de_reporte != '' GROUP BY mes_de_reporte")->fetchAll(PDO::FETCH_ASSOC);
+
+    usort($statsMesesRaw, function($a, $b) use ($meses_orden) {
+        $m1 = strtoupper(trim($a['mes_de_reporte']));
+        $m2 = strtoupper(trim($b['mes_de_reporte']));
+        return ($meses_orden[$m1] ?? 13) <=> ($meses_orden[$m2] ?? 13);
+    });
+    $statsMeses = $statsMesesRaw;
+
+} catch (PDOException $e) {
+    die("Error: " . $e->getMessage());
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>INFORME GRÁFICO - PERSONAL SINIESTRADO | SSC</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <style>
+        body { background: #fff; font-size: 11px; text-transform: uppercase; font-family: 'Segoe UI', sans-serif; color: #333; }
+        .header-report { background: #1a1a1a; color: white; padding: 15px 20px; border-bottom: 4px solid #ffc107; }
+        .card { border: 1px solid #dee2e6; border-radius: 10px; margin-bottom: 20px; break-inside: avoid; page-break-inside: avoid; }
+        .card-header { background: #f8f9fa !important; font-weight: bold; }
+        
+        /* Contenedor seguro para evitar desbordes de las gráficas */
+        .chart-container { position: relative; height: 240px; width: 100%; max-width: 100%; padding: 5px; box-sizing: border-box; }
+
+        @media print {
+            @page { size: letter portrait; margin: 10mm; }
+            body { background: #fff !important; zoom: 90%; }
+            .no-print { display: none !important; }
+            .card { box-shadow: none !important; border: 1px solid #ccc !important; margin-bottom: 15px; }
+            .chart-container { height: 210px !important; }
+        }
+    </style>
+</head>
+<body onload="setTimeout(() => window.print(), 800);">
+<div class="header-report mb-4">
+    <div class="container-fluid d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="mb-0 fw-bold" style="font-size: 16px;"><i class="fas fa-user-injured text-warning me-2"></i> SECRETARÍA DE SEGURIDAD CIUDADANA</h4>
+            <span class="text-warning" style="font-size: 11px;">INFORME GERENCIAL DE PERSONAL SINIESTRADO</span>
+        </div>
+        <div class="no-print">
+            <button onclick="window.print()" class="btn btn-warning btn-sm fw-bold"><i class="fas fa-print me-1"></i> IMPRIMIR / PDF</button>
+            <a href="index.php" class="btn btn-outline-light btn-sm"><i class="fas fa-undo me-1"></i> REGRESAR</a>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid px-4">
+    <div class="row text-center mb-3">
+        <div class="col-md-12">
+            <div class="card p-2 border-top border-warning border-4">
+                <small class="text-muted">TOTAL DE PERSONAL SINIESTRADO REGISTRADO</small>
+                <span class="fs-4 fw-bold text-dark"><?= number_format($total) ?></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- Gráfica de Meses / Contabilidad -->
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header text-info"><i class="fas fa-calendar-alt me-2"></i> COMPORTAMIENTO Y CONTABILIDAD MENSUAL (SINIESTROS Y MONTOS EROGADOS)</div>
+                <div class="chart-container"><canvas id="chartMeses"></canvas></div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header text-warning"><i class="fas fa-exclamation-triangle me-2"></i> CAUSAS PRINCIPALES</div>
+                <div class="chart-container"><canvas id="chartCausa"></canvas></div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header text-primary"><i class="fas fa-hospital me-2"></i> HOSPITALES FRECUENTES</div>
+                <div class="chart-container"><canvas id="chartHospital"></canvas></div>
+            </div>
+        </div>
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header text-success"><i class="fas fa-building me-2"></i> TOP 10 ÁREAS DE ADSCRIPCIÓN</div>
+                <div class="chart-container" style="height: 250px;"><canvas id="chartAdscripcion"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    Chart.register(ChartDataLabels);
+    const opts = {
+        responsive: true, 
+        maintainAspectRatio: false,
+        plugins: { 
+            legend: { display: false }, 
+            datalabels: { anchor: 'end', align: 'top', font: { weight: 'bold', size: 9 } } 
+        },
+        scales: { 
+            y: { beginAtZero: true, grace: '20%' }, 
+            x: { grid: { display: false }, ticks: { font: { size: 9 } } } 
+        }
+    };
+
+    // Gráfica Mensual (Contabilidad y Siniestros)
+    new Chart(document.getElementById('chartMeses'), {
+        type: 'bar',
+        data: {
+            labels: [<?php foreach($statsMeses as $s) echo "'".$s['mes_de_reporte']."',"; ?>],
+            datasets: [{
+                label: 'Total Siniestros',
+                data: [<?php foreach($statsMeses as $s) echo $s['total'].","; ?>],
+                backgroundColor: '#0dcaf0',
+                borderRadius: 5
+            }]
+        },
+        options: {
+            ...opts,
+            plugins: {
+                ...opts.plugins,
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let value = context.raw;
+                            let montos = [<?php foreach($statsMeses as $s) echo ($s['monto_total'] ?? 0).","; ?>];
+                            let montoMes = montos[context.dataIndex];
+                            return [' Siniestros: ' + value, ' Montos Erogados: $' + Number(montoMes).toLocaleString('es-MX', {minimumFractionDigits: 2})];
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById('chartCausa'), {
+        type: 'bar',
+        data: {
+            labels: [<?php foreach($statsCausa as $s) echo "'".$s['categoria']."',"; ?>],
+            datasets: [{ data: [<?php foreach($statsCausa as $s) echo $s['total'].","; ?>], backgroundColor: '#ffc107', borderRadius: 5 }]
+        },
+        options: opts
+    });
+
+    new Chart(document.getElementById('chartHospital'), {
+        type: 'bar',
+        data: {
+            labels: [<?php foreach($statsHospital as $s) echo "'".$s['categoria']."',"; ?>],
+            datasets: [{ data: [<?php foreach($statsHospital as $s) echo $s['total'].","; ?>], backgroundColor: '#0d6efd', borderRadius: 5 }]
+        },
+        options: opts
+    });
+
+    new Chart(document.getElementById('chartAdscripcion'), {
+        type: 'bar',
+        data: {
+            labels: [<?php foreach($statsAdscripcion as $s) echo "'".$s['categoria']."',"; ?>],
+            datasets: [{ data: [<?php foreach($statsAdscripcion as $s) echo $s['total'].","; ?>], backgroundColor: '#198754', borderRadius: 4 }]
+        },
+        options: {
+            ...opts, indexAxis: 'y',
+            plugins: { ...opts.plugins, datalabels: { align: 'right', anchor: 'end' } },
+            scales: { x: { grace: '20%' }, y: { grid: { display: false }, ticks: { font: { size: 9 } } } }
+        }
+    });
+</script>
+</body>
+</html>

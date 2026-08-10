@@ -1,0 +1,269 @@
+<?php
+session_start();
+require_once "../../config/conexion.php";
+
+$id = $_GET['id'] ?? null;
+$modo_edicion = ($id && $id !== 'nuevo');
+
+if ($modo_edicion) {
+    // MODO EDICIÓN: Cargar datos desde la tabla de siniestros
+    $stmt = $pdo->prepare("SELECT * FROM siniestros WHERE id = ?");
+    $stmt->execute([$id]);
+    $r = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$r) die("Error: Siniestro no encontrado.");
+} else {
+    // MODO ALTA: Valores iniciales limpios y cálculo del consecutivo automático correcto
+    $anio_actual = date('Y');
+
+    // CORRECCIÓN DEFINITIVA: Ordenamos por el texto del folio de forma descendente 
+    // para garantizar que el "003/2026" sea prioritario frente al "002/2026"
+    $stmtFolio = $pdo->prepare("SELECT folio FROM siniestros WHERE folio LIKE ? ORDER BY folio DESC LIMIT 1");
+    $stmtFolio->execute(["%/$anio_actual"]);
+    $ultimo = $stmtFolio->fetch(PDO::FETCH_ASSOC);
+
+    if ($ultimo) {
+        // Extraemos los caracteres numéricos antes de la diagonal
+        $partes = explode('/', $ultimo['folio']);
+        $siguiente_numero = intval($partes[0]) + 1;
+    } else {
+        // Si de verdad es el primer registro que se genera en el año, inicia en 1
+        $siguiente_numero = 1;
+    }
+
+    // Formato oficial rellenado con ceros a la izquierda (Ej: 001/2026, 002/2026)
+    $folio_automatico = str_pad($siguiente_numero, 3, '0', STR_PAD_LEFT) . '/' . $anio_actual;
+
+    $r = [
+        'id' => '',
+        'folio' => $folio_automatico,
+        'fecha' => date('Y-m-d'),
+        'hora' => date('H:i:s'),
+        'marca' => '', 'modelo' => '', 'tipo' => '', 'economico_placas' => '',
+        'no_inventario' => '', 'no_serie' => '', 'adscripcion' => '', 'kilometraje_unidad' => '',
+        'cond_nombre' => '', 'cond_ap_paterno' => '', 'cond_ap_materno' => '',
+        'cond_no_empleado' => '', 'cond_licencia' => '', 'cond_tel_area' => '', 'cond_tel_particular' => '',
+        'quien_reporta_nombre' => '', 'tercero_marca_modelo' => '', 'tercero_tipo' => '',
+        'tercero_placas' => '', 'tercero_color' => '', 'ubi_calle' => '', 'ubi_colonia' => '',
+        'ubi_alcaldia' => '', 'ubi_referencias' => '', 'supervisor' => '', 'taller_asignado' => '',
+        'hora_asignado' => '', 'hora_llegada' => '', 'hora_terminado' => '',
+        'aseguradora' => '', 'coord_aseguradora' => '', 'no_siniestro' => '', 'no_siniestro_aseg' => '',
+        'ajustador_nombre' => '', 'hora_reporte_aseg' => '', 'observaciones' => '',
+        'riesgo_danos_materiales' => 0, 'est_danos_materiales' => '0.00',
+        'riesgo_robo_total' => 0, 'est_robo_total' => '0.00',
+        'riesgo_resp_civil' => 0, 'est_resp_civil' => '0.00',
+        'riesgo_gastos_medicos' => 0, 'est_gastos_medicos' => '0.00',
+        'riesgo_equipo_especial' => 0, 'est_equipo_especial' => '0.00',
+        'resp_tipo' => 'tercero', 'acta_levantada' => 0, 'no_acta' => '', 'aplica_deducible' => 'NO',
+        'concluyo_atencion' => '',
+        'les_n1' => '', 'les_e1' => '', 'les_er1' => 0, 'les_h1' => '',
+        'les_n2' => '', 'les_e2' => '', 'les_er2' => 0, 'les_h2' => '',
+        'les_n3' => '', 'les_e3' => '', 'les_er3' => 0, 'les_h3' => ''
+    ];
+}
+
+$f = strtotime($r['fecha']);
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title><?= $modo_edicion ? 'Modificar' : 'Capturar' ?> Siniestro - SSC</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background:#f4f6f9; font-size: 11px; font-family: 'Arial Narrow', Arial, sans-serif; }
+        .form-container { background:#fff; border: 1px solid #000; padding: 15px; }
+        .section-header { background:#e9ecef; color:#000; padding:4px 10px; font-weight:bold; border: 1px solid #000; margin-top: 8px; text-transform: uppercase; }
+        .row-border { border-left: 1px solid #000; border-right: 1px solid #000; border-bottom: 1px solid #000; margin: 0; }
+        .col-border { border-right: 1px solid #000; padding: 3px 6px; }
+        .col-border:last-child { border-right: none; }
+        label { font-weight: bold; display: block; margin-bottom: 1px; color: #333; font-size: 10px; }
+        .form-control-sm { border: none; border-radius: 0; padding: 0; font-size: 11px; background: transparent; }
+        .form-control-sm:focus { box-shadow: none; background: #fffde7; }
+        .table-lesionados input { border: none; width: 100%; }
+        textarea.obs-field {
+            border: none; width: 100%; resize: none; line-height: 24px;
+            background-attachment: local;
+            background-image: linear-gradient(transparent, transparent 23px, #000 24px);
+            background-size: 100% 24px;
+        }
+    </style>
+</head>
+<body class="p-3">
+<div class="container-fluid form-container">
+    <form action="guardar_reporte_detallado.php" method="POST">
+        <input type="hidden" name="id" value="<?= htmlspecialchars($r['id']) ?>">
+        <input type="hidden" name="action" value="<?= $modo_edicion ? 'update' : 'insert' ?>">
+
+        <div class="row align-items-end mb-3">
+            <div class="col-8">
+                <h5 class="fw-bold m-0">REPORTE TELEFÓNICO DE SINIESTRO <?= $modo_edicion ? '(MODIFICAR FOLIO)' : '(NUEVA CAPTURA)' ?></h5>
+            </div>
+            <div class="col-4">
+                <table class="table table-bordered border-dark table-sm m-0 text-center" style="font-size: 9px;">
+                    <tr class="bg-light"><th>DÍA</th><th>MES</th><th>AÑO</th><th>HORA</th></tr>
+                    <tr>
+                        <td><?= date('d', $f) ?></td>
+                        <td><?= date('m', $f) ?></td>
+                        <td><?= date('Y', $f) ?></td>
+                        <td><input type="time" name="hora" class="form-control-sm text-center w-100" value="<?= substr($r['hora'], 0, 5) ?>"></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-header">Datos del Vehículo Asegurado</div>
+        <div class="row row-border">
+            <div class="col-3 col-border"><label>MARCA</label><input type="text" name="marca" class="form-control-sm w-100" value="<?= htmlspecialchars($r['marca']) ?>" required></div>
+            <div class="col-3 col-border"><label>MODELO</label><input type="text" name="modelo" class="form-control-sm w-100" value="<?= htmlspecialchars($r['modelo']) ?>"></div>
+            <div class="col-3 col-border"><label>TIPO</label><input type="text" name="tipo" class="form-control-sm w-100" value="<?= htmlspecialchars($r['tipo']) ?>"></div>
+            <div class="col-3 col-border bg-light">
+                <label>FOLIO <?= $modo_edicion ? '(EDITANDO)' : '(CONSECUTIVO AUTOMÁTICO)' ?></label>
+                <input type="text" name="folio" class="form-control-sm w-100 fw-bold text-danger" value="<?= htmlspecialchars($r['folio']) ?>" readonly>
+            </div>
+        </div>
+        <div class="row row-border">
+            <div class="col-4 col-border"><label>ECONÓMICO/PLACAS</label><input type="text" name="economico_placas" class="form-control-sm w-100" value="<?= htmlspecialchars($r['economico_placas']) ?>" required></div>
+            <div class="col-8 col-border"><label>ADSCRIPCIÓN</label><input type="text" name="adscripcion" class="form-control-sm w-100" value="<?= htmlspecialchars($r['adscripcion']) ?>"></div>
+        </div>
+        <div class="row row-border">
+            <div class="col-3 col-border"><label>NÚMERO DE INVENTARIO</label><input type="text" name="no_inventario" class="form-control-sm w-100" value="<?= htmlspecialchars($r['no_inventario']) ?>"></div>
+            <div class="col-5 col-border"><label>NÚMERO DE SERIE Y/O MOTOR</label><input type="text" name="no_serie" class="form-control-sm w-100" value="<?= htmlspecialchars($r['no_serie']) ?>" required></div>
+            <div class="col-4 col-border"><label>KILOMETRAJE DE LA UNIDAD</label><input type="text" name="kilometraje_unidad" class="form-control-sm w-100" value="<?= htmlspecialchars($r['kilometraje_unidad']) ?>"></div>
+        </div>
+
+        <div class="section-header">Datos del Conductor</div>
+        <div class="row row-border">
+            <div class="col-4 col-border"><label>NOMBRE(S)</label><input type="text" name="cond_nombre" class="form-control-sm w-100" value="<?= htmlspecialchars($r['cond_nombre']) ?>"></div>
+            <div class="col-4 col-border"><label>APELLIDO PATERNO</label><input type="text" name="cond_ap_paterno" class="form-control-sm w-100" value="<?= htmlspecialchars($r['cond_ap_paterno']) ?>"></div>
+            <div class="col-4 col-border"><label>APELLIDO MATERNO</label><input type="text" name="cond_ap_materno" class="form-control-sm w-100" value="<?= htmlspecialchars($r['cond_ap_materno']) ?>"></div>
+        </div>
+        <div class="row row-border">
+            <div class="col-3 col-border"><label>N.º DE EMPLEADO</label><input type="text" name="cond_no_empleado" class="form-control-sm w-100" value="<?= htmlspecialchars($r['cond_no_empleado']) ?>"></div>
+            <div class="col-3 col-border"><label>LICENCIA NÚMERO</label><input type="text" name="cond_licencia" class="form-control-sm w-100" value="<?= htmlspecialchars($r['cond_licencia']) ?>"></div>
+            <div class="col-3 col-border"><label>N.º TELEFÓNICO DEL ÁREA</label><input type="text" name="cond_tel_area" class="form-control-sm w-100" value="<?= htmlspecialchars($r['cond_tel_area']) ?>"></div>
+            <div class="col-3 col-border"><label>N.º TELEFÓNICO PARTICULAR</label><input type="text" name="cond_tel_particular" class="form-control-sm w-100" value="<?= htmlspecialchars($r['cond_tel_particular']) ?>"></div>
+        </div>
+
+        <div class="section-header">Quién Reporta</div>
+        <div class="row row-border">
+            <div class="col-12 col-border"><label>NOMBRE COMPLETO</label><input type="text" name="quien_reporta_nombre" class="form-control-sm w-100" value="<?= htmlspecialchars($r['quien_reporta_nombre']) ?>"></div>
+        </div>
+
+        <div class="section-header">Datos del Tercero</div>
+        <div class="row row-border">
+            <div class="col-4 col-border"><label>MARCA Y MODELO</label><input type="text" name="tercero_marca_modelo" class="form-control-sm w-100" value="<?= htmlspecialchars($r['tercero_marca_modelo']) ?>"></div>
+            <div class="col-2 col-border"><label>TIPO</label><input type="text" name="tercero_tipo" class="form-control-sm w-100" value="<?= htmlspecialchars($r['tercero_tipo']) ?>"></div>
+            <div class="col-3 col-border"><label>PLACAS</label><input type="text" name="tercero_placas" class="form-control-sm w-100" value="<?= htmlspecialchars($r['tercero_placas']) ?>"></div>
+            <div class="col-3 col-border"><label>COLOR</label><input type="text" name="tercero_color" class="form-control-sm w-100" value="<?= htmlspecialchars($r['tercero_color']) ?>"></div>
+        </div>
+
+        <div class="section-header">Ubicación del Accidente</div>
+        <div class="row row-border">
+            <div class="col-4 col-border"><label>CALLE(S)</label><input type="text" name="ubi_calle" class="form-control-sm w-100" value="<?= htmlspecialchars($r['ubi_calle']) ?>"></div>
+            <div class="col-4 col-border"><label>COLONIA</label><input type="text" name="ubi_colonia" class="form-control-sm w-100" value="<?= htmlspecialchars($r['ubi_colonia']) ?>"></div>
+            <div class="col-4 col-border"><label>ALCALDÍA</label><input type="text" name="ubi_alcaldia" class="form-control-sm w-100" value="<?= htmlspecialchars($r['ubi_alcaldia']) ?>"></div>
+        </div>
+        <div class="row row-border">
+            <div class="col-12 col-border"><label>REFERENCIAS</label><input type="text" name="ubi_referencias" class="form-control-sm w-100" value="<?= htmlspecialchars($r['ubi_referencias']) ?>"></div>
+        </div>
+
+        <div class="section-header">Lesionados</div>
+        <table class="table table-bordered border-dark table-sm m-0 table-lesionados" style="font-size: 10px;">
+            <tr class="text-center bg-light">
+                <th width="50%">NOMBRE</th><th width="15%">N.º DE EMPLEADO</th><th width="10%">ERUM</th><th width="25%">HOSPITAL</th>
+            </tr>
+            <?php for($i=1; $i<=3; $i++): ?>
+            <tr>
+                <td><input type="text" name="les_n<?= $i ?>" value="<?= htmlspecialchars($r["les_n$i"]) ?>"></td>
+                <td><input type="text" name="les_e<?= $i ?>" value="<?= htmlspecialchars($r["les_e$i"]) ?>"></td>
+                <td class="text-center"><input type="checkbox" name="les_er<?= $i ?>" value="1" <?= $r["les_er$i"] == 1 ? 'checked' : '' ?>></td>
+                <td><input type="text" name="les_h<?= $i ?>" value="<?= htmlspecialchars($r["les_h$i"]) ?>"></td>
+            </tr>
+            <?php endfor; ?>
+        </table>
+
+        <div class="section-header">Control Operativo</div>
+        <div class="row row-border">
+            <div class="col-12 col-border"><label>SUPERVISOR</label><input type="text" name="supervisor" class="form-control-sm w-100" value="<?= htmlspecialchars($r['supervisor'] ?? '') ?>"></div>
+        </div>
+        <div class="row row-border">
+            <div class="col-6 col-border"><label>TALLER ASIGNADO</label><input type="text" name="taller_asignado" class="form-control-sm w-100" value="<?= htmlspecialchars($r['taller_asignado']) ?>"></div>
+            <div class="col-2 col-border"><label>ASIGNADO A LAS</label><input type="time" name="hora_asignado" class="form-control-sm w-100" value="<?= $r['hora_asignado'] ? substr($r['hora_asignado'],0,5) : '' ?>"></div>
+            <div class="col-2 col-border"><label>LLEGADA A LAS</label><input type="time" name="hora_llegada" class="form-control-sm w-100" value="<?= $r['hora_llegada'] ? substr($r['hora_llegada'],0,5) : '' ?>"></div>
+            <div class="col-2 col-border"><label>TERMINADO</label><input type="time" name="hora_terminado" class="form-control-sm w-100" value="<?= $r['hora_terminado'] ? substr($r['hora_terminado'],0,5) : '' ?>"></div>
+        </div>
+
+        <div class="section-header">Reporte a la Aseguradora</div>
+        <div class="row row-border">
+            <div class="col-8 col-border"><label>NOMBRE DE LA ASEGURADORA</label><input type="text" name="aseguradora" class="form-control-sm w-100" value="<?= htmlspecialchars($r['aseguradora']) ?>"></div>
+            <div class="col-4 col-border"><label>N.º DE SINIESTRO INTERNO</label><input type="text" name="no_siniestro" class="form-control-sm w-100" value="<?= htmlspecialchars($r['no_siniestro']) ?>"></div>
+        </div>
+        <div class="row row-border">
+            <div class="col-4 col-border"><label>COORDINADOR</label><input type="text" name="coord_aseguradora" class="form-control-sm w-100" value="<?= htmlspecialchars($r['coord_aseguradora']) ?>"></div>
+            <div class="col-4 col-border"><label>AJUSTADOR</label><input type="text" name="ajustador_nombre" class="form-control-sm w-100" value="<?= htmlspecialchars($r['ajustador_nombre']) ?>"></div>
+            <div class="col-2 col-border"><label>N.º SINIESTRO ASEG.</label><input type="text" name="no_siniestro_aseg" class="form-control-sm w-100" value="<?= htmlspecialchars($r['no_siniestro_aseg']) ?>"></div>
+            <div class="col-2 col-border"><label>REPORTE A LAS</label><input type="time" name="hora_reporte_aseg" class="form-control-sm w-100" value="<?= $r['hora_reporte_aseg'] ? substr($r['hora_reporte_aseg'],0,5) : '' ?>"></div>
+        </div>
+
+        <div class="section-header">Observaciones</div>
+        <div class="row row-border">
+            <div class="col-12 col-border">
+                <textarea name="observaciones" class="obs-field p-2" rows="5" maxlength="500" placeholder="Escriba sus observaciones aquí..."><?= htmlspecialchars($r['observaciones']) ?></textarea>
+            </div>
+        </div>
+
+        <div class="section-header">Riesgo Afectado / Estimación</div>
+        <div class="row row-border">
+            <div class="col-7 p-0" style="border-right: 1px solid #000;">
+                <?php
+                $riesgos = [
+                    'DAÑOS MATERIALES' => ['check'=>'riesgo_danos_materiales', 'est'=>'est_danos_materiales'],
+                    'ROBO TOTAL' => ['check'=>'riesgo_robo_total', 'est'=>'est_robo_total'],
+                    'RESPONSABILIDAD CIVIL' => ['check'=>'riesgo_resp_civil', 'est'=>'est_resp_civil'],
+                    'GASTOS MÉDICOS' => ['check'=>'riesgo_gastos_medicos', 'est'=>'est_gastos_medicos'],
+                    'EQUIPO ESPECIAL' => ['check'=>'riesgo_equipo_especial', 'est'=>'est_equipo_especial']
+                ];
+                foreach($riesgos as $label => $fields): ?>
+                <div class="d-flex border-bottom border-dark align-items-center p-1">
+                    <div style="width:180px;" class="fw-bold"><?= $label ?></div>
+                    <div class="px-3">( <input type="checkbox" name="<?= $fields['check'] ?>" value="1" <?= $r[$fields['check']] == 1 ? 'checked' : '' ?>> )</div>
+                    <div class="d-flex align-items-center flex-grow-1">
+                        <span>$</span><input type="number" step="0.01" name="<?= $fields['est'] ?>" class="form-control-sm flex-grow-1 ms-2" value="<?= htmlspecialchars($r[$fields['est']]) ?>">
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div class="col-5 p-2 bg-light">
+                <label>¿QUIÊN FUE EL RESPONSABLE?</label>
+                <div class="ms-3">
+                    <input type="radio" name="resp_tipo" value="policia" <?= $r['resp_tipo'] == 'policia' ? 'checked' : '' ?>> EL POLICÍA <br>
+                    <input type="radio" name="resp_tipo" value="tercero" <?= $r['resp_tipo'] == 'tercero' ? 'checked' : '' ?>> EL TERCERO
+                </div>
+                <hr class="my-2 border-dark">
+                <input type="checkbox" name="acta_levantada" value="1" <?= $r['acta_levantada'] == 1 ? 'checked' : '' ?>> SE LEVANTÓ ACTA <br>
+                <label class="mt-1">NÚMERO DE ACTA</label>
+                <input type="text" name="no_acta" class="form-control-sm border-bottom border-dark w-100" value="<?= htmlspecialchars($r['no_acta']) ?>">
+                <label class="mt-2">APLICA DEDUCIBLE</label>
+                <select name="aplica_deducible" class="form-select form-select-sm p-0 m-0" style="font-size: 10px;">
+                    <option value="NO" <?= $r['aplica_deducible'] == 'NO' ? 'selected' : '' ?>>NO</option>
+                    <option value="SÍ" <?= $r['aplica_deducible'] == 'SÍ' ? 'selected' : '' ?>>SÍ</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="section-header">Cómo concluyó la atención del siniestro</div>
+        <div class="row row-border">
+            <div class="col-12 p-0">
+                <textarea name="concluyo_atencion" class="w-100 border-0 p-2" rows="4" placeholder="Escriba el cierre de atención del siniestro..."><?= htmlspecialchars($r['concluyo_atencion']) ?></textarea>
+            </div>
+        </div>
+
+        <div class="mt-4 text-center">
+            <button type="submit" class="btn btn-dark btn-lg px-5 shadow">
+                <?= $modo_edicion ? 'GUARDAR CAMBIOS (ACTUALIZAR)' : 'REGISTRAR NUEVO REPORTE OFICIAL' ?>
+            </button>
+        </div>
+    </form>
+</div>
+</body>
+</html>

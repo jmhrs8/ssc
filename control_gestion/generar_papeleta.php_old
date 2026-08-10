@@ -1,0 +1,251 @@
+<?php
+$host = '127.0.0.1'; $db = 'ssc_control_gestion'; $user = 'root'; $pass = 'jmhl2474';
+$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+    ]);
+
+    $stmt = $pdo->prepare("SELECT cg.*, ca.nombre_area FROM control_gestion cg LEFT JOIN catalogo_areas ca ON cg.id_turnado_por = ca.id_area WHERE cg.id_registro = ?");
+    $stmt->execute([$id]);
+    $r = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    die("Error de base de datos: " . $e->getMessage());
+}
+
+if (!$r) { die("Folio no encontrado."); }
+
+$fecha_oficio = (!empty($r['fecha_oficio']) && $r['fecha_oficio'] != '0000-00-00') ? date('d/m/Y', strtotime($r['fecha_oficio'])) : '';
+$fecha_recepcion = (!empty($r['fecha_recepcion']) && $r['fecha_recepcion'] != '0000-00-00') ? date('d/m/Y', strtotime($r['fecha_recepcion'])) : '';
+
+function imprimirFormatoOficial($data, $fecha_oficio, $fecha_recepcion) {
+    // Normalizamos el texto del área
+    $area_nombre = mb_strtoupper(trim($data['nombre_area'] ?? ''), 'UTF-8');
+    $id_turnado = $data['id_turnado_por'] ?? '';
+
+    // Evaluación del Área
+    $subdireccion = ($id_turnado == 1 || strpos($area_nombre, 'SUBDIRECCION') !== false || strpos($area_nombre, 'SUBDIRECCIÓN') !== false) ? 'X' : '';
+    $aseguramiento = ($id_turnado == 2 || strpos($area_nombre, 'ASEGURAMIENTO') !== false) ? 'X' : '';
+    $seguros_vida = ($id_turnado == 3 || strpos($area_nombre, 'SEGUROS DE VIDA') !== false || strpos($area_nombre, 'JUD') !== false) ? 'X' : '';
+
+    // Evaluación de Prioridad
+    $prioridad = isset($data['prioridad']) ? trim(mb_transform_prioridad($data['prioridad'])) : 'NORMAL';
+    $p_normal = ($prioridad == 'NORMAL') ? 'X' : '';
+    $p_urgente = ($prioridad == 'URGENTE') ? 'X' : '';
+    $p_extra = ($prioridad == 'EXTRA-URGENTE' || $prioridad == 'EXTRA URGENTE') ? 'X' : '';
+
+    // Evaluación de Instrucción / Acción
+    $accion_raw = mb_strtoupper(trim($data['accion_papeleta'] ?? ''), 'UTF-8');
+    $accion_clean = str_replace(['Á', 'É', 'Í', 'Ó', 'Ú'], ['A', 'E', 'I', 'O', 'U'], $accion_raw);
+
+    $a_archivo      = (strpos($accion_clean, 'ARCHIVO') !== false) ? 'X' : '';
+    $a_tramite      = (strpos($accion_clean, 'TRAMITE') !== false) ? 'X' : '';
+    $a_conocimiento = (strpos($accion_clean, 'CONOCIMIENTO') !== false) ? 'X' : '';
+?>
+    <!-- LOGO INSTITUCIONAL SUPERIOR -->
+    <div class="bloque-logo-superior">
+        <img src="logo_ssc.png" alt="Logo Secretaría de Seguridad Ciudadana" class="img-logo-institucional">
+    </div>
+
+    <div class="papeleta-container">
+        <!-- Cenefa Lateral Izquierda -->
+        <div class="cenefa-lateral">
+            <div class="cenefa-lineas"></div>
+        </div>
+
+        <div class="contenido-form">
+            <div class="row-grid header-main">
+                SUBDIRECCIÓN DE RIESGOS Y ASEGURAMIENTO
+            </div>
+
+            <div class="row-grid header-sub">
+                <div style="text-transform: uppercase; font-family: 'Arial Black', Arial, sans-serif;">CONTROL DE GESTIÓN 2026</div>
+                <div style="padding-right: 5px; font-family: 'Arial Black', Arial, sans-serif;">FOLIO: <span class="folio-num"><?php echo str_pad($data['id_registro'], 4, '0', STR_PAD_LEFT); ?></span></div>
+            </div>
+
+            <!-- Fila de Fechas -->
+            <div class="row-grid">
+                <div class="cell label-cell" style="width: 13%;">OFICIO No.:</div>
+                <div class="cell fw-bold cell-oficio-dinamico" style="width: 32%;"><?php echo htmlspecialchars($data['numero_oficio']); ?></div>
+
+                <div class="cell label-cell text-center" style="width: 10%;">FECHA:</div>
+                <div class="cell text-center fw-bold" style="width: 15%; font-size: 8.5pt;"><?php echo $fecha_oficio; ?></div>
+
+                <div class="cell label-cell text-center" style="width: 16%; font-size: 6.5pt; padding: 1px;">FECHA DE RECEPCION</div>
+                <div class="cell text-center fw-bold" style="width: 13%; font-size: 8.5pt;"><?php echo $fecha_recepcion; ?></div>
+            </div>
+
+            <div class="row-grid">
+                <div class="cell label-cell" style="width: 13%;">REMITE:</div>
+                <div class="cell fw-bold" style="width: 45%; font-size: 8.5pt;"><?php echo htmlspecialchars($data['titular']); ?></div>
+                <div class="cell label-cell" style="width: 10%;">CARGO:</div>
+                <div class="cell fw-bold" style="width: 32%; font-size: 8pt;"><?php echo htmlspecialchars($data['cargo']); ?></div>
+            </div>
+
+            <div class="row-grid" style="min-height: 55px; flex: 1.1;">
+                <div class="block-textarea">
+                    <div class="block-title">ASUNTO:</div>
+                    <div class="block-content">
+                        <?php echo htmlspecialchars($data['asunto']); ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bloque de Checkboxes Estilo Excel -->
+            <div class="row-grid" style="min-height: 58px; flex: 1.1;">
+                <!-- Columna 1 -->
+                <div class="col-grid" style="width: 45%;">
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 80%;">ASEGURAMIENTO DE BIENES</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 20%;"><?php echo $aseguramiento; ?></div>
+                    </div>
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 80%;">JUD. DE SEGUROS DE VIDA</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 20%;"><?php echo $seguros_vida; ?></div>
+                    </div>
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 80%;">SUBDIRECCION</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 20%;"><?php echo $subdireccion; ?></div>
+                    </div>
+                </div>
+
+                <!-- Columna 2 -->
+                <div class="col-grid" style="width: 35%;">
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 80%;">PARA ARCHIVO</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 20%;"><?php echo $a_archivo; ?></div>
+                    </div>
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 80%;">PARA TRÁMITE</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 20%;"><?php echo $a_tramite; ?></div>
+                    </div>
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 80%;">CONOCIMIENTO</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 20%;"><?php echo $a_conocimiento; ?></div>
+                    </div>
+                </div>
+
+                <!-- Columna 3 -->
+                <div class="col-grid" style="width: 20%;">
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 75%;">NORMAL</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 25%;"><?php echo $p_normal; ?></div>
+                    </div>
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 75%;">URGENTE</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 25%;"><?php echo $p_urgente; ?></div>
+                    </div>
+                    <div class="sub-row">
+                        <div class="cell label-cell justify-left" style="width: 75%;">EXTRA-URGENTE</div>
+                        <div class="cell text-center fw-bold casilla-x" style="width: 25%;"><?php echo $p_extra; ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row-grid" style="min-height: 42px; flex: 0.9;">
+                <div class="block-textarea">
+                    <div class="block-title">INSTRUCCIONES</div>
+                    <div class="block-empty-print"></div>
+                </div>
+            </div>
+
+            <div class="row-grid" style="min-height: 38px; flex: 0.9;">
+                <div class="block-textarea">
+                    <div class="block-title">INFORME DEL SEGUIMIENTO</div>
+                    <div class="block-empty-print"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+<?php
+}
+
+function mb_transform_prioridad($str) {
+    return mb_strtoupper(trim($str), 'UTF-8');
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Papeleta Oficial - Folio <?=$id?></title>
+    <style>
+        @page { size: letter; margin: 4mm 8mm 4mm 8mm; }
+        body { font-family: Arial, sans-serif; background: #fff; margin: 0; padding: 0; color: #000; }
+
+        /* Agrandamos el bloque del logo */
+        .bloque-logo-superior { width: 100%; max-width: 740px; margin: 0 auto 3px auto; display: block; text-align: left; }
+        .img-logo-institucional { height: 85px; width: auto; object-fit: contain; display: block; } /* Aumentado de 56px a 85px */
+
+        .papeleta-container { width: 100%; max-width: 740px; height: 370px; margin: 0 auto; display: flex; border: 2.5px solid #000; box-sizing: border-box; background: #fff; }
+
+        .cenefa-lateral { width: 28px; border-right: 2.5px solid #000; background-color: #f7f7f7; position: relative; overflow: hidden; }
+        .cenefa-lineas { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: linear-gradient(45deg, #7F1D1D 25%, transparent 25%), linear-gradient(-45deg, #7F1D1D 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #14532D 75%), linear-gradient(-45deg, transparent 75%, #14532D 75%); background-size: 10px 10px; opacity: 0.22; }
+
+        .contenido-form { flex: 1; display: flex; flex-direction: column; width: calc(100% - 28px); }
+        .row-grid { display: flex; width: 100%; border-bottom: 1px solid #000; min-height: 20px; align-items: stretch; }
+        .row-grid:last-child { border-bottom: none; }
+
+        .header-main { background-color: #d9d9d9; font-weight: bold; text-align: center; justify-content: center; font-size: 10.5pt; padding: 2px 0; font-family: 'Arial Black', Arial, sans-serif; }
+        .header-sub { background-color: #e6e6e6; font-weight: bold; display: flex; justify-content: space-between; padding: 1px 6px; font-size: 9pt; align-items: center; box-sizing: border-box; }
+        .folio-num { font-size: 11pt; font-family: 'Arial Black', Arial, sans-serif; margin-left: 4px; color: #000; display: inline-block; }
+
+        .cell { padding: 1px 3px; display: flex; align-items: center; border-right: 1px solid #000; box-sizing: border-box; font-size: 8.5pt; }
+        .cell:last-child { border-right: none; }
+
+        .cell-oficio-dinamico {
+            font-size: calc(7pt + 0.12vw) !important;
+            line-height: 1.1;
+            word-break: break-all;
+            overflow: visible;
+        }
+
+        .label-cell { font-weight: bold; background-color: #e6e6e6; font-size: 7.5pt; }
+        .justify-left { justify-content: flex-start; }
+        .text-center { justify-content: center; text-align: center; }
+        .fw-bold { font-weight: bold; }
+
+        .casilla-x { background-color: #fff; font-size: 10pt; font-family: 'Arial Black', Arial, sans-serif; }
+
+        .block-textarea { display: flex; flex-direction: column; width: 100%; padding: 2px 4px; box-sizing: border-box; height: 100%; }
+        .block-title { font-weight: bold; font-size: 7.5pt; margin-bottom: 1px; text-decoration: underline; }
+        .block-content { flex: 1; font-size: 8.5pt; text-align: justify; line-height: 1.1; font-weight: bold; }
+        .block-empty-print { flex: 1; background-color: #fff; }
+
+        .col-grid { display: flex; flex-direction: column; border-right: 1px solid #000; }
+        .col-grid:last-child { border-right: none; }
+        .sub-row { display: flex; width: 100%; border-bottom: 1px solid #000; flex: 1; min-height: 16px; }
+        .sub-row:last-child { border-bottom: none; }
+
+        .no-print-bar { max-width: 740px; margin: 5px auto 5px auto; display: flex; justify-content: space-between; align-items: center; padding: 0 5px; }
+        .btn-action { background: #861532; color: #fff; border: none; padding: 5px 15px; font-weight: bold; cursor: pointer; border-radius: 4px; font-size: 9.5pt; }
+
+        @media print {
+            .no-print-bar, .tijera-line { display: none !important; }
+            body { padding: 0; margin: 0; }
+            .bloque-logo-superior { margin-top: 1mm; }
+            .papeleta-container { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="no-print-bar">
+        <a href="index.php" style="color: #666; text-decoration: none; font-weight: bold; font-size: 10pt;">← Regresar</a>
+        <button class="btn-action" onclick="window.print()">📥 Imprimir (1 Sola Hoja)</button>
+    </div>
+
+    <!-- COPIA 1 -->
+    <?php imprimirFormatoOficial($r, $fecha_oficio, $fecha_recepcion); ?>
+
+    <!-- LÍNEA DE CORTE -->
+    <div class="tijera-line" style="border-top: 1.2px dashed #000; margin: 8px auto; text-align: center; color: #444; font-size: 7.5pt; max-width: 740px; width:100%; letter-spacing: 3px; font-weight: bold;">
+        ✂️ CORTE PARA SEPARACIÓN DE ACUSES ✂️
+    </div>
+
+    <!-- COPIA 2 -->
+    <?php imprimirFormatoOficial($r, $fecha_oficio, $fecha_recepcion); ?>
+
+</body>
+</html>

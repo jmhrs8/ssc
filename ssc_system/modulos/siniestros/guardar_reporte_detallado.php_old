@@ -1,0 +1,102 @@
+<?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+session_start();
+require_once "../../config/conexion.php";
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    try {
+        // 1. Obtener columnas reales de la tabla unificada 'siniestros'
+        $q = $pdo->query("DESCRIBE siniestros");
+        $colsDB = $q->fetchAll(PDO::FETCH_COLUMN);
+
+        $data = [];
+        $columns = [];
+        $placeholders = [];
+
+        // 2. Mapeo de nombres del formulario unificado vs base de datos (se adaptó a las columnas de siniestros)
+        $mapeo = [
+            'supervisor'         => 'supervisor_nombre', // Mapeado a la columna de siniestros si aplica, o se inserta directo si coincide
+            'taller_asignado'    => 'taller_asignado',   // Columna nativa en siniestros
+            'coord_aseguradora'  => 'coord_aseguradora', 
+            'no_siniestro'       => 'no_siniestro',      // Interno
+            'no_siniestro_aseg'  => 'no_siniestro_aseg', // Aseguradora
+            'ajustador_nombre'   => 'ajustador_nombre',
+            'hora_reporte_aseg'  => 'hora_reporte_aseg'
+        ];
+
+        // 3. Normalizar y convertir a MAYÚSCULAS para mantener consistencia de datos oficiales
+        $postNormalizado = [];
+        foreach ($_POST as $key => $value) {
+            $newKey = isset($mapeo[$key]) ? $mapeo[$key] : $key;
+            // Forzado de mayúsculas para cadenas de texto (excepto claves primarias o campos de control si aplica)
+            $postNormalizado[$newKey] = is_string($value) ? mb_strtoupper(trim($value), 'UTF-8') : $value;
+        }
+
+        // 4. Manejo e Intercepción de Checkboxes (Sanitización Quirúrgica para enteros de MySQL)
+        $checkboxes = [
+            'acta_levantada', 'riesgo_danos_materiales', 'riesgo_robo_total',
+            'riesgo_resp_civil', 'riesgo_gastos_medicos', 'riesgo_equipo_especial',
+            'les_er1', 'les_er2', 'les_er3'
+        ];
+
+        // Forzar a que todos los checkboxes existentes en POST cambien de 'ON' o cadenas a entero 1
+        foreach ($checkboxes as $chk) {
+            if (isset($postNormalizado[$chk])) {
+                $postNormalizado[$chk] = ($postNormalizado[$chk] === 'ON' || $postNormalizado[$chk] == 1 || $postNormalizado[$chk] === '1') ? 1 : 0;
+            }
+        }
+
+        // Procesar campos que vienen en el POST y que correspondan a la estructura de la DB
+        foreach ($postNormalizado as $key => $value) {
+            // Saltamos la columna de auto_increment 'id' si viene vacía (para inserciones nuevas)
+            if ($key === 'id' && empty($value)) {
+                continue;
+            }
+
+            if (in_array($key, $colsDB)) {
+                $columns[] = $key;
+                $placeholders[] = ":$key";
+                $data[":$key"] = ($value === '') ? null : $value;
+            }
+        }
+
+        // Procesar checkboxes faltantes que no fueron seleccionados en el HTML (Asignar 0)
+        foreach ($checkboxes as $chk) {
+            if (in_array($chk, $colsDB) && !isset($postNormalizado[$chk])) {
+                $columns[] = $chk;
+                $placeholders[] = ":$chk";
+                $data[":$chk"] = 0;
+            }
+        }
+
+        // 5. Determinar la acción (INSERT con actualización por duplicado en el FOLIO único o UPDATE explícito)
+        $action = $_POST['action'] ?? 'insert';
+        $id_siniestro = $_POST['id'] ?? '';
+
+        if ($action === 'update' && !empty($id_siniestro)) {
+            // Construcción del UPDATE explícito por ID
+            $updateParts = [];
+            foreach ($columns as $col) {
+                $updateParts[] = "$col = :$col";
+            }
+            $sql = "UPDATE siniestros SET " . implode(', ', $updateParts) . " WHERE id = :id_where";
+            $data[':id_where'] = $id_siniestro;
+        } else {
+            // Modo inserción segura con Upsert basado en la restricción UNIQUE del campo 'folio'
+            $sql = "INSERT INTO siniestros (" . implode(',', $columns) . ")
+                    VALUES (" . implode(',', $placeholders) . ")
+                    ON DUPLICATE KEY UPDATE " . implode(', ', array_map(fn($c) => "$c = VALUES($c)", $columns));
+        }
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($data);
+
+        // Redirigir al generador de PDF usando el parámetro unificado de folio
+        header("Location: generar_pdf.php?folio=" . urlencode($_POST['folio']));
+        exit();
+
+    } catch (Exception $e) {
+        die("ERROR CRÍTICO AL GUARDAR EN LA TABLA UNIFICADA: " . $e->getMessage());
+    }
+}

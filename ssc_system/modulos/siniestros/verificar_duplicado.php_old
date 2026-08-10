@@ -1,0 +1,16 @@
+<?php
+require_once "../../config/conexion.php";
+
+$valor = $_POST['valor'] ?? '';
+$columna = $_POST['columna'] ?? '';
+$idActual = $_POST['id'] ?? 0;
+
+if (!empty($valor) && !empty($columna)) {
+    // Buscamos si existe, pero ignoramos el ID que estamos editando actualmente
+    $sql = "SELECT COUNT(*) FROM siniestros WHERE $columna = ? AND id != ?";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$valor, $idActual]);
+    $existe = $stmt->fetchColumn() > 0;
+
+    echo json_encode(['duplicado' => $existe]);
+}

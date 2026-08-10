@@ -1,0 +1,38 @@
+<?php
+header('Content-Type: application/json');
+$host = '127.0.0.1'; $db = 'ssc_control_gestion'; $user = 'root'; $pass = 'jmhl2474';
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+
+    $id = $_POST['id_usuario'] ?? '';
+    $nombre = $_POST['nombre_completo'] ?? '';
+    $username = $_POST['username'] ?? '';
+    $correo = $_POST['correo'] ?? '';
+    $rol = $_POST['rol'] ?? 'CAPTURISTA';
+    $foto_nombre = null;
+
+    // Lógica de archivo
+    if (isset($_FILES['foto_perfil']) && $_FILES['foto_perfil']['error'] == 0) {
+        $foto_nombre = time() . '_' . $_FILES['foto_perfil']['name'];
+        move_uploaded_file($_FILES['foto_perfil']['tmp_name'], 'uploads/perfiles/' . $foto_nombre);
+    }
+
+    if (!empty($id)) {
+        // UPDATE
+        $sql = "UPDATE usuarios SET nombre_completo=?, username=?, correo=?, rol=?" . ($foto_nombre ? ", foto_perfil=?" : "") . " WHERE id_usuario=?";
+        $params = [$nombre, $username, $correo, $rol];
+        if ($foto_nombre) $params[] = $foto_nombre;
+        $params[] = $id;
+        $pdo->prepare($sql)->execute($params);
+    } else {
+        // INSERT
+        $pass_hash = password_hash($_POST['password'] ?? '123456', PASSWORD_DEFAULT);
+        $sql = "INSERT INTO usuarios (nombre_completo, username, correo, password, rol, foto_perfil) VALUES (?, ?, ?, ?, ?, ?)";
+        $pdo->prepare($sql)->execute([$nombre, $username, $correo, $pass_hash, $rol, $foto_nombre]);
+    }
+    echo json_encode(["status" => "success", "message" => "Guardado correctamente"]);
+} catch (Exception $e) {
+    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+}
+?>

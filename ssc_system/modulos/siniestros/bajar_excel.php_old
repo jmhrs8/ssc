@@ -1,0 +1,70 @@
+<?php
+// Desactivar errores visuales para que no ensucien el archivo Excel
+error_reporting(0);
+ini_set('display_errors', 0);
+
+require '../../vendor/autoload.php';
+require_once "../../config/conexion.php";
+
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+
+try {
+    $spreadsheet = new Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('Siniestros');
+
+    // 1. DEFINIR ENCABEZADOS EXACTOS (Punto 2)
+    $headers = [
+        'NUMERO CONSECUTIVO', 'MES', 'FOLIO', 'FECHA', 'HORA', 'MARCA', 'MODELO', 'TIPO', 
+        'ECONOMICO PLACAS', 'N0. DE INVENTARIO', 'NÚMERO DE SERIE', 'ADSCRIPCIÓN', 
+        'NOMBRE DEL ELEMENTO', 'N0. DE SINIESTRO', 'TALLER ASIGNADO', 'HOSPITAL', 
+        'CARP. DE INVESTIGACIÓN', 'ARRENDADO', 'ASEGURADORA', 'PROPIO', 
+        'DECLARACION UNIVERSAL', 'PASE MEDICOS', 'PASE AL TALLER', 
+        'FOTOGRAFIAS', 'CUADERNILLO', 'VISTO BUENO', 'FECHA VISTO BUENO', 'OBSERVACIONES'
+    ];
+    
+    // Aplicar encabezados a la fila 1
+    $sheet->fromArray($headers, NULL, 'A1');
+
+    // 2. CONSULTA SQL (Asegúrate que estos nombres existen en tu DESCRIBE siniestros)
+    $sql = "SELECT 
+                no_consecutivo, mes, folio, fecha, hora, marca, modelo, tipo, 
+                economico_placas, no_inventario, no_serie, adscripcion, 
+                nombre_elemento, no_siniestro, taller_asignado, hospital, 
+                carp_investigacion, arrendado, aseguradora, propio, 
+                declaracion_universal, pase_medicos, pase_taller, foto_unidad, 
+                cuadernillo, visto_bueno, fecha_visto_bueno, observaciones 
+            FROM siniestros 
+            ORDER BY id DESC";
+
+    $stmt = $pdo->query($sql);
+    $data = $stmt->fetchAll(PDO::FETCH_NUM);
+
+    if ($data) {
+        // Llenar datos desde la fila 2
+        $sheet->fromArray($data, NULL, 'A2');
+    }
+
+    // 3. DAR FORMATO BÁSICO
+    foreach (range('A', 'Z') as $col) {
+        $sheet->getColumnDimension($col)->setAutoSize(true);
+    }
+
+    // 4. CABECERAS DE DESCARGA
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment;filename="REPORTE_SINIESTROS_' . date('Y-m-d') . '.xlsx"');
+    header('Cache-Control: max-age=0');
+
+    $writer = new Xlsx($spreadsheet);
+    
+    // Limpiar cualquier buffer de salida para evitar archivos corruptos
+    if (ob_get_contents()) ob_end_clean();
+    
+    $writer->save('php://output');
+    exit;
+
+} catch (Exception $e) {
+    // Si falla, al menos te dirá por qué en pantalla
+    die("Error crítico al generar Excel: " . $e->getMessage());
+}

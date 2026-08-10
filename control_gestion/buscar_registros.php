@@ -1,0 +1,49 @@
+<?php
+session_start();
+header('Content-Type: application/json; charset=utf-8');
+
+if (!isset($_SESSION['usuario'])) {
+    echo json_encode([]);
+    exit;
+}
+
+$host = '127.0.0.1'; $db = 'ssc_control_gestion'; $user = 'root'; $pass = 'jmhl2474';
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+    ]);
+
+    $search = isset($_REQUEST['q']) ? trim($_REQUEST['q']) : '';
+    $id_area = isset($_REQUEST['area']) ? intval($_REQUEST['area']) : 0;
+
+    // Traemos de forma explícita tus campos de PDF de origen y conclusión
+    $sql = "SELECT cg.*, u.nombre_completo AS nombre_usuario, u.foto_perfil, u.correo
+            FROM control_gestion cg
+            LEFT JOIN usuarios u ON cg.id_usuario_asignado = u.id_usuario
+            WHERE 1=1";
+
+    $params = [];
+
+    if (!empty($search)) {
+        // Se añade cg.id_registro LIKE :search para permitir la búsqueda exacta/parcial por ID Folio
+        $sql .= " AND (cg.id_registro LIKE :search OR cg.numero_oficio LIKE :search OR cg.asunto LIKE :search OR cg.titular LIKE :search)";
+        $params[':search'] = "%$search%";
+    }
+
+    if ($id_area > 0) {
+        $sql .= " AND cg.id_turnado_por = :id_area";
+        $params[':id_area'] = $id_area;
+    }
+
+    $sql .= " ORDER BY cg.id_registro DESC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    echo json_encode($stmt->fetchAll());
+
+} catch (PDOException $e) {
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+}
+?>

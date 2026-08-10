@@ -1,0 +1,113 @@
+<?php
+session_start();
+require_once('../../config/conexion.php'); // Usando tu archivo PDO
+
+// --- VALIDACIÓN DE SEGURIDAD CORREGIDA ---
+if (!isset($_SESSION['user_id']) || strtoupper($_SESSION['nivel'] ?? '') !== 'ADMIN_GENERAL') {
+    header("Location: ../../index.php?error=acceso_denegado");
+    exit();
+}
+
+$id = $_GET['id'] ?? null;
+if (!$id) { header("Location: index.php"); exit(); }
+
+// 1. Obtener datos actuales del usuario
+$stmt = $pdo->prepare("SELECT * FROM usuarios WHERE id = ?");
+$stmt->execute([$id]);
+$user = $stmt->fetch();
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $nombre = $_POST['nombre'];
+    $usuario = $_POST['usuario'];
+    $nivel = $_POST['nivel']; // El valor viene del select (capturista o admin_general)
+    
+    // Normalizamos para la base de datos
+    $modulo = (strtolower($nivel) == 'admin_general') ? 'todos' : $_POST['modulo_acceso'];
+
+    try {
+        // Actualizamos nombre, usuario, nivel y módulo
+        $sql = "UPDATE usuarios SET nombre = ?, usuario = ?, nivel = ?, modulo_acceso = ? WHERE id = ?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$nombre, $usuario, $nivel, $modulo, $id]);
+
+        // Si se escribió una contraseña nueva, la actualizamos
+        if (!empty($_POST['password'])) {
+            $new_pass = password_hash($_POST['password'], PASSWORD_DEFAULT);
+            $pdo->prepare("UPDATE usuarios SET password = ? WHERE id = ?")->execute([$new_pass, $id]);
+        }
+
+        header("Location: index.php?msg=actualizado");
+        exit();
+    } catch (PDOException $e) {
+        $error = "Error: " . $e->getMessage();
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Usuario - SSC</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light p-4">
+<div class="container" style="max-width: 600px;">
+    <div class="card shadow border-0">
+        <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0 text-uppercase fw-bold">Editar Usuario #<?php echo $id; ?></h5>
+        </div>
+        <div class="card-body">
+            <?php if(isset($error)): ?>
+                <div class="alert alert-danger"><?php echo $error; ?></div>
+            <?php endif; ?>
+
+            <form method="POST">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Nombre Completo</label>
+                    <input type="text" name="nombre" class="form-control" value="<?php echo htmlspecialchars($user['nombre']); ?>" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Usuario</label>
+                    <input type="text" name="usuario" class="form-control" value="<?php echo htmlspecialchars($user['usuario']); ?>" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Nueva Contraseña (Dejar vacío para no cambiar)</label>
+                    <input type="password" name="password" class="form-control">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Nivel</label>
+                    <select name="nivel" id="nivel_select" class="form-select" onchange="checkNivel()">
+                        <option value="capturista" <?php echo (strtolower($user['nivel']) == 'capturista') ? 'selected' : ''; ?>>Capturista</option>
+                        <option value="admin_general" <?php echo (strtolower($user['nivel']) == 'admin_general') ? 'selected' : ''; ?>>Administrador General</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3" id="modulo_div" style="<?php echo (strtolower($user['nivel']) == 'admin_general') ? 'display:none' : ''; ?>">
+                    <label class="form-label fw-bold">Módulo Asignado</label>
+                    <select name="modulo_acceso" class="form-select text-uppercase">
+                        <?php $m = strtolower($user['modulo_acceso']); ?>
+                        <option value="siniestros" <?php echo ($m == 'siniestros') ? 'selected' : ''; ?>>Siniestros</option>
+                        <option value="armamento" <?php echo ($m == 'armamento') ? 'selected' : ''; ?>>Armamento</option>
+                        <option value="personal" <?php echo ($m == 'personal') ? 'selected' : ''; ?>>Personal</option>
+                        <option value="radios" <?php echo ($m == 'radios') ? 'selected' : ''; ?>>Radios y Semovientes</option>
+                    </select>
+                </div>
+
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-success">Actualizar Datos</button>
+                    <a href="index.php" class="btn btn-outline-secondary">Volver</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function checkNivel() {
+    const nivel = document.getElementById('nivel_select').value;
+    const div = document.getElementById('modulo_div');
+    div.style.display = (nivel === 'admin_general') ? 'none' : 'block';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<?php
+session_start();
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+require_once "../../config/conexion.php";
+
+// --- VALIDACIÓN DE SEGURIDAD AMPLIADA ---
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../../login.php");
+    exit();
+}
+
+$nivel_actual = strtoupper(trim($_SESSION['nivel'] ?? ''));
+$permiso_personal = $_SESSION['permiso_personal'] ?? 0;
+
+// Permitir acceso si es Admin General o si es Capturista con permiso de personal autorizado
+if ($nivel_actual !== 'ADMIN_GENERAL' && $permiso_personal != 1) {
+    header("Location: index.php?error=sin_permiso");
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
+    $archivo = $_FILES['excel_file']['tmp_name'];
+    $nombre_archivo = $_FILES['excel_file']['name'];
+    $extension = strtolower(pathinfo($nombre_archivo, PATHINFO_EXTENSION));
+
+    // Limpiar alertas previas
+    unset($_SESSION['alerta_duplicados']);
+    unset($_SESSION['alerta_no_encontrados']);
+
+    $rfcs_leidos = [];
+
+    if (is_uploaded_file($archivo)) {
+        if ($extension === 'csv') {
+            if (($handle = fopen($archivo, "r")) !== FALSE) {
+                while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+                    foreach ($data as $cell) {
+                        $rfc = strtoupper(trim($cell));
+                        if (strlen($rfc) >= 10 && strlen($rfc) <= 13 && $rfc !== 'RFC' && $rfc !== 'R.F.C.') {
+                            $rfcs_leidos[] = $rfc;
+                        }
+                    }
+                }
+                fclose($handle);
+            }
+        } elseif ($extension === 'xlsx') {
+            $zip = new ZipArchive;
+            if ($zip->open($archivo) === TRUE) {
+                $sharedStrings = [];
+                if (($index = $zip->locateName('xl/sharedStrings.xml')) !== false) {
+                    $xmlString = $zip->getFromIndex($index);
+                    $xml = simplexml_load_string($xmlString);
+                    foreach ($xml->si as $val) {
+                        $sharedStrings[] = (string)($val->t ?? $val->r->t);
+                    }
+                }
+
+                $sheetIndex = $zip->locateName('xl/worksheets/sheet1.xml');
+                if ($sheetIndex !== false) {
+                    $sheetData = $zip->getFromIndex($sheetIndex);
+                    $xmlSheet = simplexml_load_string($sheetData);
+
+                    foreach ($xmlSheet->sheetData->row as $row) {
+                        foreach ($row->c as $cell) {
+                            $coord = (string)$cell['r'];
+                            // Leer exclusivamente la columna A
+                            if (strpos($coord, 'A') === 0) {
+                                $val = "";
+                                if (isset($cell['t']) && (string)$cell['t'] === 's') {
+                                    $sIndex = (int)$cell->v;
+                                    if (isset($sharedStrings[$sIndex])) {
+                                        $val = $sharedStrings[$sIndex];
+                                    }
+                                } else {
+                                    $val = (string)($cell->v ?? '');
+                                }
+
+                                $rfc = strtoupper(trim($val));
+                                if (strlen($rfc) >= 10 && strlen($rfc) <= 13 && $rfc !== 'RFC' && $rfc !== 'R.F.C.') {
+                                    $rfcs_leidos[] = $rfc;
+                                }
+                            }
+                        }
+                    }
+                }
+                $zip->close();
+            }
+        }
+    }
+
+    // 1. Detección de duplicados en el archivo subido
+    $conteo_archivo = array_count_values($rfcs_leidos);
+    $duplicados_msj = [];
+    foreach ($conteo_archivo as $rfc_val => $cantidad) {
+        if ($cantidad > 1) {
+            $duplicados_msj[] = "RFC: <b>$rfc_val</b> (aparece $cantidad veces)";
+        }
+    }
+
+    if (!empty($duplicados_msj)) {
+        $_SESSION['alerta_duplicados'] = "⚠️ <b>Registros duplicados detectados en el archivo:</b><br>" . implode("<br>", $duplicados_msj);
+    }
+
+    // 2. Validar existencia en la Base de Datos y detectar cuáles NO se encontraron
+    $rfcs_unicos = array_unique($rfcs_leidos);
+    $rfcs_encontrados_bd = [];
+    $no_encontrados = [];
+
+    if (!empty($rfcs_unicos)) {
+        $placeholders = implode(',', array_fill(0, count($rfcs_unicos), '?'));
+
+        try {
+            $stmt = $pdo->prepare("SELECT DISTINCT rfc FROM personal WHERE rfc IN ($placeholders)");
+            $stmt->execute(array_values($rfcs_unicos));
+
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $rfcs_encontrados_bd[] = strtoupper(trim($row['rfc']));
+            }
+        } catch (PDOException $e) {
+            die("Error en consulta: " . $e->getMessage());
+        }
+
+        // Identificar los que venían en el Excel pero NO están en la BD
+        foreach ($rfcs_unicos as $rfc_buscado) {
+            if (!in_array($rfc_buscado, $rfcs_encontrados_bd)) {
+                $no_encontrados[] = $rfc_buscado;
+            }
+        }
+    }
+
+    if (!empty($no_encontrados)) {
+        $_SESSION['alerta_no_encontrados'] = "❌ <b>Los siguientes RFCs del archivo NO se encontraron en la base de datos:</b> " . implode(", ", $no_encontrados);
+    }
+
+    // Guardamos en sesión TODOS los leídos para resaltar y filtrar
+    $_SESSION['rfc_resaltar'] = $rfcs_leidos;
+}
+
+header("Location: index.php?ver_solo=1");
+exit();
+?>
