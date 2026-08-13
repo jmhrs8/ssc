@@ -26,7 +26,7 @@ $usuario_que_elimina = $_SESSION['nombre'] ?? ($_SESSION['usuario'] ?? 'ADMINIST
 // ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // A. ELIMINAR SELECCIONADOS (Borrado Masivo)
+    // A. ELIMINAR SELECCIONADOS (Borrado Masivo con Respaldo en Bitácora)
     if (isset($_POST['cmd']) && $_POST['cmd'] === 'eliminar_seleccionados') {
         if (!$tiene_permiso_masivo) {
             header("Location: index.php?error=sin_permiso_accion");
@@ -43,7 +43,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ids_limpios = array_map('intval', $ids_a_eliminar);
             $placeholders = implode(',', array_fill(0, count($ids_limpios), '?'));
 
-            // Eliminar directamente de la tabla principal
+            // 1. RESPALDO EN BITÁCORA ANTES DE BORRAR (QUIRÚRGICO)
+            $sql_backup = "INSERT INTO personal_eliminados 
+                (id_original, rfc, apellido_paterno, apellido_materno, nombre, area_adscripcion, puesto, tipo_contratacion, fecha_eliminacion, eliminado_por)
+                SELECT id, rfc, apellido_paterno, apellido_materno, nombre, area_adscripcion, puesto, tipo_contratacion, NOW(), ?
+                FROM personal WHERE id IN ($placeholders)";
+            
+            $stmt_backup = $pdo->prepare($sql_backup);
+            // El primer parámetro es el usuario activo, seguido de los IDs a respaldar
+            $params_backup = array_merge([$usuario_que_elimina], $ids_limpios);
+            $stmt_backup->execute($params_backup);
+
+            // 2. Eliminar de la tabla principal
             $sql_delete = "DELETE FROM personal WHERE id IN ($placeholders)";
             $stmt_delete = $pdo->prepare($sql_delete);
             $stmt_delete->execute($ids_limpios);
@@ -64,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['accion']) && !$es_solo_lectura) {
         $accion = $_POST['accion'];
         $id = $_POST['id'] ?? null;
-        
+
         $apellido_paterno = mb_strtoupper(trim($_POST['apellido_paterno'] ?? ''));
         $apellido_materno = mb_strtoupper(trim($_POST['apellido_materno'] ?? ''));
         $nombre = mb_strtoupper(trim($_POST['nombre'] ?? ''));
@@ -109,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
-    // A. ELIMINAR UN SOLO REGISTRO (Exclusivo Admin General)
+    // A. ELIMINAR UN SOLO REGISTRO (Exclusivo Admin General con Respaldo en Bitácora)
     if (isset($_GET['eliminar'])) {
         if (!$es_admin_general) {
             header("Location: index.php?error=sin_permiso_accion");
@@ -118,6 +129,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
         $id = (int)$_GET['eliminar'];
         try {
+            // 1. RESPALDO EN BITÁCORA ANTES DE BORRAR (QUIRÚRGICO)
+            $sql_backup = "INSERT INTO personal_eliminados 
+                (id_original, rfc, apellido_paterno, apellido_materno, nombre, area_adscripcion, puesto, tipo_contratacion, fecha_eliminacion, eliminado_por)
+                SELECT id, rfc, apellido_paterno, apellido_materno, nombre, area_adscripcion, puesto, tipo_contratacion, NOW(), ?
+                FROM personal WHERE id = ?";
+            
+            $stmt_backup = $pdo->prepare($sql_backup);
+            $stmt_backup->execute([$usuario_que_elimina, $id]);
+
+            // 2. Eliminar registro original
             $stmt = $pdo->prepare("DELETE FROM personal WHERE id = ?");
             $stmt->execute([$id]);
 

@@ -39,7 +39,11 @@ try {
     $top_areas = array_slice($por_area, 0, 10);
     $top_puestos = array_slice($por_puesto, 0, 10);
 
-    // 4. Total de registros en la bitácora de eliminados y consulta
+    // 4. NUEVA CONSULTA: Desglose de Altas / Registros por Quincena
+    $stmt_quincenas = $pdo->query("SELECT quincena, COUNT(*) as total FROM personal WHERE quincena IS NOT NULL AND quincena != '' GROUP BY quincena ORDER BY quincena DESC");
+    $por_quincena = $stmt_quincenas->fetchAll(PDO::FETCH_ASSOC);
+
+    // 5. Total de registros en la bitácora de eliminados y consulta
     $total_eliminados = $pdo->query("SELECT COUNT(*) FROM personal_eliminados")->fetchColumn();
     $stmt_eliminados = $pdo->query("SELECT * FROM personal_eliminados ORDER BY fecha_eliminacion DESC");
     $eliminados = $stmt_eliminados->fetchAll(PDO::FETCH_ASSOC);
@@ -197,6 +201,52 @@ try {
         </div>
     </div>
 
+    <!-- NUEVA SECCIÓN: DESGLOSE Y GRÁFICA POR QUINCENA -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center bg-warning text-dark">
+                    <span class="fw-bold"><i class="fas fa-calendar-alt text-dark"></i> REGISTRO DE ALTAS POR QUINCENA</span>
+                    <span class="badge bg-dark text-white">HISTÓRICO</span>
+                </div>
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <div style="height: 260px;">
+                                <canvas id="graficaQuincenas"></canvas>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <small class="text-muted fw-bold d-block mb-2">DETALLE DE PERSONAL POR QUINCENA:</small>
+                            <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
+                                <table class="table table-hover table-bordered table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>QUINCENA</th>
+                                            <th class="text-center" style="width: 100px;">TOTAL ALTAS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (count($por_quincena) > 0): ?>
+                                            <?php foreach ($por_quincena as $q): ?>
+                                            <tr>
+                                                <td class="fw-bold text-dark"><?= htmlspecialchars($q['quincena']) ?></td>
+                                                <td class="text-center fw-bold text-primary"><?= number_format($q['total']) ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        <?php else: ?>
+                                            <tr><td colspan="2" class="text-center py-3 text-muted">NO HAY QUINCENAS REGISTRADAS</td></tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Sección de Auditoría: Bitácora de Personal Eliminado -->
     <div class="card shadow-sm">
         <div class="card-header py-2">
@@ -206,7 +256,7 @@ try {
                 </div>
                 <div class="col-md-5 text-end d-flex justify-content-end align-items-center gap-2">
                     <span class="badge bg-danger">TOTAL BAJAS: <?= $total_eliminados ?></span>
-                    
+
                     <!-- BOTÓN DE LIMPIEZA VISIBLE Y FUNCIONAL -->
                     <form method="POST" onsubmit="return confirm('⚠️ ATENCIÓN: ¿Estás seguro de vaciar toda la bitácora de eliminados?');" class="d-inline">
                         <button type="submit" name="vaciar_bitacora" class="btn btn-danger btn-sm py-1 px-2" title="Limpiar tabla de pruebas">
@@ -304,7 +354,7 @@ try {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { 
+            plugins: {
                 legend: { display: false },
                 datalabels: { anchor: 'end', align: 'right', color: '#333', font: { weight: 'bold', size: 11 } }
             },
@@ -331,13 +381,42 @@ try {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { 
+            plugins: {
                 legend: { display: false },
                 datalabels: { anchor: 'end', align: 'right', color: '#333', font: { weight: 'bold', size: 11 } }
             },
             scales: {
                 x: { beginAtZero: true, ticks: { precision: 0 }, grid: { display: false }, grace: '15%' },
                 y: { ticks: { font: { size: 9, weight: 'bold' } }, grid: { display: false } }
+            }
+        }
+    });
+
+    // SCRIPT DE LA NUEVA GRÁFICA DE QUINCENAS
+    const ctxQuincenas = document.getElementById('graficaQuincenas').getContext('2d');
+    new Chart(ctxQuincenas, {
+        type: 'bar',
+        data: {
+            labels: <?= json_encode(array_column($por_quincena, 'quincena')) ?>,
+            datasets: [{
+                label: 'Altas por Quincena',
+                data: <?= json_encode(array_column($por_quincena, 'total')) ?>,
+                backgroundColor: '#ffc107',
+                borderColor: '#d39e00',
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                datalabels: { anchor: 'end', align: 'top', color: '#212529', font: { weight: 'bold', size: 11 } }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 10, weight: 'bold' } } },
+                y: { beginAtZero: true, ticks: { precision: 0 }, grid: { display: false }, grace: '15%' }
             }
         }
     });
