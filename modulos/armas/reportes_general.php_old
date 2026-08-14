@@ -18,7 +18,7 @@ try {
     $statusSeguro = $pdo->query("SELECT status_seguro, COUNT(*) as total FROM inventario_armas WHERE status_seguro != '' GROUP BY status_seguro ORDER BY total DESC")->fetchAll(PDO::FETCH_ASSOC);
 
     // 6. Totales Globales (Cálculos específicos)
-    $totales = $pdo->query("SELECT
+    $totales = $pdo->query("SELECT 
         SUM(CAST(armas AS UNSIGNED)) as total_armas,
         SUM(CAST(cartuchos AS UNSIGNED)) as total_cartuchos,
         SUM(importe_convenio) as gran_total_dinero,
@@ -59,11 +59,7 @@ try {
             <h4 class="mb-0 fw-bold"><i class="fas fa-chart-bar me-2 text-info"></i> PANEL INTEGRAL DE CONTROL</h4>
             <span class="text-info opacity-75">Armamento, Caninos y Equinos</span>
         </div>
-        <div>
-            <!-- BOTÓN AÑADIDO PARA ACCEDER AL REPORTE DINÁMICO Y EXPORTACIÓN -->
-            <a href="reporte_dinamico.php" class="btn btn-success btn-sm me-2"><i class="fas fa-file-excel me-1"></i> FILTROS Y EXPORTAR</a>
-            <a href="index.php" class="btn btn-outline-light btn-sm"><i class="fas fa-undo me-1"></i> REGRESAR</a>
-        </div>
+        <a href="index.php" class="btn btn-outline-light btn-sm"><i class="fas fa-undo me-1"></i> REGRESAR</a>
     </div>
 </div>
 
@@ -168,8 +164,8 @@ try {
             }
         },
         scales: {
-            y: {
-                beginAtZero: true,
+            y: { 
+                beginAtZero: true, 
                 grace: '20%', // Da espacio extra arriba de la barra más alta
                 grid: { color: '#f0f0f0' }
             },

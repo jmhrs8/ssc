@@ -46,7 +46,7 @@ try {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>ARMAMENTO | SSC SYSTEM</title>
+    <title>ARMAMENTO & SEMOVIENTES | SSC SYSTEM</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -90,7 +90,7 @@ try {
     <div class="d-flex align-items-center">
         <i class="fas fa-shield-alt fa-2x me-2 text-info"></i>
         <div>
-            <h4 class="mb-0 fw-bold">ARMAMENTO</h4>
+            <h4 class="mb-0 fw-bold">ARMAMENTO & SEMOVIENTES</h4>
             <div class="registros-label">REGISTROS TOTALES: <?= $stats['total'] ?></div>
         </div>
     </div>
