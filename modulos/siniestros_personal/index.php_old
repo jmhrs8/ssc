@@ -156,6 +156,10 @@ try {
                         <?php foreach ($resultados as $row): ?>
                             <tr>
                                 <td class="text-center">
+                                    <!-- Botón Formato Oficial / PDF -->
+                                    <a href="generar_formato_oficial.php?id=<?= $row['id'] ?>" class="btn btn-outline-danger btn-xs" target="_blank" title="Imprimir Formato Oficial">
+                                        <i class="fas fa-file-pdf"></i>
+                                    </a>
                                     <?php if (!$es_lectura): ?>
                                         <a href="formulario.php?id=<?= $row['id'] ?>" class="btn btn-warning btn-xs text-dark" title="Editar"><i class="fas fa-edit"></i></a>
                                     <?php endif; ?>

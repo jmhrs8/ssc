@@ -8,10 +8,21 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
+$nivel_actual = strtoupper(trim($_SESSION['nivel'] ?? ''));
+$permiso_siniestros = $_SESSION['permiso_siniestros'] ?? 0;
+
+// Validación de roles administrativos (Solo Administradores pueden vaciar la bitácora)
+$es_admin_general = ($nivel_actual === 'ADMIN_GENERAL');
+$es_administrador = ($es_admin_general || $nivel_actual === 'ADMINISTRADOR');
+
 // ==========================================
-// PROCESAR LIMPIEZA DE LA BITÁCORA PARA PRUEBAS
+// PROCESAR LIMPIEZA DE LA BITÁCORA (restringido a administradores)
 // ==========================================
 if (isset($_POST['vaciar_bitacora'])) {
+    if (!$es_administrador) {
+        header("Location: reportes_general.php?error=sin_permiso");
+        exit();
+    }
     try {
         $pdo->exec("TRUNCATE TABLE personal_eliminados");
         header("Location: reportes_general.php?limp=1");
@@ -83,10 +94,16 @@ try {
         <a href="index.php" class="btn btn-dark btn-sm px-3"><i class="fas fa-arrow-left"></i> VOLVER AL PADRÓN</a>
     </div>
 
-    <!-- Alerta de éxito si se vació la bitácora -->
+    <!-- Alertas de Estado -->
     <?php if (isset($_GET['limp']) && $_GET['limp'] == 1): ?>
         <div class="alert alert-success alert-dismissible fade show py-2" role="alert">
-            <i class="fas fa-check-circle"></i> La bitácora de eliminados ha sido limpiada exitosamente para tus pruebas.
+            <i class="fas fa-check-circle"></i> La bitácora de eliminados ha sido limpiada exitosamente.
+            <button type="button" class="btn-close py-2" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
+    <?php if (isset($_GET['error']) && $_GET['error'] == 'sin_permiso'): ?>
+        <div class="alert alert-danger alert-dismissible fade show py-2" role="alert">
+            <i class="fas fa-exclamation-triangle"></i> Acceso denegado: No cuentas con permisos de administrador para realizar esta acción.
             <button type="button" class="btn-close py-2" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     <?php endif; ?>
@@ -257,12 +274,14 @@ try {
                 <div class="col-md-5 text-end d-flex justify-content-end align-items-center gap-2">
                     <span class="badge bg-danger">TOTAL BAJAS: <?= $total_eliminados ?></span>
 
-                    <!-- BOTÓN DE LIMPIEZA VISIBLE Y FUNCIONAL -->
-                    <form method="POST" onsubmit="return confirm('⚠️ ATENCIÓN: ¿Estás seguro de vaciar toda la bitácora de eliminados?');" class="d-inline">
-                        <button type="submit" name="vaciar_bitacora" class="btn btn-danger btn-sm py-1 px-2" title="Limpiar tabla de pruebas">
-                            <i class="fas fa-trash-alt"></i> Limpiar Bitácora
-                        </button>
-                    </form>
+                    <!-- BOTÓN DE LIMPIEZA VISIBLE SOLO PARA ADMINISTRADORES -->
+                    <?php if ($es_administrador): ?>
+                        <form method="POST" onsubmit="return confirm('⚠️ ATENCIÓN: ¿Estás seguro de vaciar toda la bitácora de eliminados?');" class="d-inline">
+                            <button type="submit" name="vaciar_bitacora" class="btn btn-danger btn-sm py-1 px-2" title="Limpiar tabla de pruebas">
+                                <i class="fas fa-trash-alt"></i> Limpiar Bitácora
+                            </button>
+                        </form>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -392,7 +411,6 @@ try {
         }
     });
 
-    // SCRIPT DE LA NUEVA GRÁFICA DE QUINCENAS
     const ctxQuincenas = document.getElementById('graficaQuincenas').getContext('2d');
     new Chart(ctxQuincenas, {
         type: 'bar',
