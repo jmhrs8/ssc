@@ -21,7 +21,7 @@ $dia_s = date('d', $fecha_ts);
 $mes_s = date('m', $fecha_ts);
 $anio_s = date('Y', $fecha_ts);
 
-// --- 1. PROCESAMIENTO DE DATOS DEL ELEMENTO (SEPARACIÓN INTELIGENTE) ---
+// --- 1. PROCESAMIENTO DE DATOS DEL ELEMENTO ---
 $elem_nombre_db = trim($row['nombre'] ?? '');
 $elem_ap_pat    = trim($row['apellido_paterno'] ?? '');
 $elem_ap_mat    = trim($row['apellido_materno'] ?? '');
@@ -40,66 +40,65 @@ if (empty($elem_ap_pat) && $elem_nombre_db !== '') {
     }
 }
 
-
-// --- 2. PROCESAMIENTO DE DATOS DEL LESIONADO (EXCLUSIVAMENTE SI SE CAPTURÓ APARTE) ---
+// --- 2. PROCESAMIENTO DE DATOS DEL LESIONADO ---
 $les_nombre_db = trim($row['lesionado_nombre'] ?? '');
 $les_ap_pat    = trim($row['lesionado_ap_paterno'] ?? '');
 $les_ap_mat    = trim($row['lesionado_ap_materno'] ?? '');
 
-// Si no se ha capturado un lesionado de forma independiente, se dejan vacíos hasta que se registren
 if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
     $les_nombres = $les_nombre_db;
     $lesionado_completo = trim($les_nombres . ' ' . $les_ap_pat . ' ' . $les_ap_mat);
 } else {
-    $les_nombres = '';
-    $les_ap_pat = '';
-    $les_ap_mat = '';
-    $lesionado_completo = '';
+    // Si no se capturó lesionado aparte, toma los datos del elemento
+    $les_nombres = $elem_nombres;
+    $les_ap_pat  = $elem_ap_pat;
+    $les_ap_mat  = $elem_ap_mat;
+    $lesionado_completo = trim($les_nombres . ' ' . $les_ap_pat . ' ' . $les_ap_mat);
 }
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>REPORTE OFICIAL - <?= htmlspecialchars($row['no_folio']) ?></title>
+    <title>REPORTE OFICIAL - <?= htmlspecialchars($row['no_folio'] ?? 'S/F') ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background: #555; font-family: 'Arial', sans-serif; font-size: 9px; color: #000; text-transform: uppercase; margin: 0; padding: 20px 0; }
-        
-        .sheet { 
-            width: 215mm; 
-            min-height: 279mm; 
-            padding: 12mm 15mm; 
-            margin: 0 auto 20mm auto; 
-            background: white; 
-            position: relative; 
-            box-sizing: border-box; 
-            box-shadow: 0 0 10px rgba(0,0,0,0.5); 
-            page-break-after: always; 
+        body { background: #444; font-family: 'Arial', sans-serif; font-size: 10px; color: #000; text-transform: uppercase; margin: 0; padding: 20px 0; }
+
+        .sheet {
+            width: 215mm;
+            min-height: 279mm;
+            padding: 15mm 18mm;
+            margin: 0 auto 20mm auto;
+            background: white;
+            position: relative;
+            box-sizing: border-box;
+            box-shadow: 0 0 12px rgba(0,0,0,0.6);
+            page-break-after: always;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
         }
 
-        .table-oficial { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
-        .table-oficial th, .table-oficial td { border: 1px solid #000; padding: 3px 5px; vertical-align: top; font-size: 9px; }
+        .table-oficial { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+        .table-oficial th, .table-oficial td { border: 1px solid #000; padding: 5px 7px; vertical-align: top; font-size: 10px; }
 
-        .field-label { font-size: 7.5px; color: #333; font-weight: bold; display: block; margin-bottom: 2px; }
-        .field-value { font-size: 9.5px; font-weight: bold; min-height: 12px; }
+        .field-label { font-size: 8px; color: #333; font-weight: bold; display: block; margin-bottom: 3px; }
+        .field-value { font-size: 11px; font-weight: bold; min-height: 15px; }
 
-        .line-write { border-bottom: 1px solid #000; min-height: 20px; margin-bottom: 4px; font-weight: bold; padding-left: 3px; }
-        .line-write-tall { border-bottom: 1px solid #000; min-height: 35px; margin-bottom: 4px; font-weight: bold; padding-left: 3px; }
+        .line-write { border-bottom: 1px solid #000; min-height: 28px; margin-bottom: 8px; font-weight: bold; padding-left: 4px; font-size: 10.5px; }
+        .line-write-tall { border-bottom: 1px solid #000; min-height: 55px; margin-bottom: 8px; font-weight: bold; padding-left: 4px; font-size: 10.5px; }
 
-        .firma-container { text-align: center; margin-top: auto; padding-top: 15px; }
-        .firma-linea { width: 250px; border-top: 1px solid #000; margin: 0 auto; padding-top: 3px; font-weight: bold; font-size: 9px; }
+        .firma-container { text-align: center; margin-top: auto; padding-top: 25px; }
+        .firma-linea { width: 280px; border-top: 1px solid #000; margin: 0 auto; padding-top: 4px; font-weight: bold; font-size: 10px; }
 
-        .codigo-footer { font-size: 8px; font-weight: bold; margin-top: 5px; }
+        .codigo-footer { font-size: 9px; font-weight: bold; margin-top: 10px; }
 
         @media print {
             body { background: none; padding: 0; }
             .no-print { display: none !important; }
-            .sheet { margin: 0; box-shadow: none; width: 215mm; height: 279mm; page-break-after: always; padding: 10mm 12mm; }
+            .sheet { margin: 0; box-shadow: none; width: 215mm; height: 279mm; page-break-after: always; padding: 12mm 15mm; }
         }
     </style>
 </head>
@@ -115,40 +114,41 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
 <!-- ================================================================= -->
 <div class="sheet">
     <div>
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; border: none;">
+        <!-- Cabecera Institucional con Logotipo Ajustado y Grande -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px; border: none;">
             <tr>
-                <td style="width: 25%; border: none; vertical-align: middle;">
-                    <img src="../../uploads/sistema/header_logo.png" alt="Logo SSC" style="max-height: 85px; max-width: 100%; object-fit: contain;" onerror="this.style.display='none'">
+                <td style="width: 28%; border: none; vertical-align: middle;">
+                    <img src="../../uploads/sistema/logo_ssc.png" alt="Logo SSC" style="max-height: 100px; max-width: 100%; object-fit: contain;" onerror="this.style.display='none'">
                 </td>
-                <td style="width: 45%; border: none; text-align: center; vertical-align: middle; font-size: 9.5px; line-height: 1.2;">
-                    <b>CIUDAD DE MÉXICO</b><br>CAPITAL DE LA TRANSFORMACIÓN
+                <td style="width: 42%; border: none; text-align: center; vertical-align: middle; font-size: 11px; line-height: 1.3;">
+                    <b>CIUDAD DE MÉXICO</b><br><span style="font-size: 9.5px; color: #444;">CAPITAL DE LA TRANSFORMACIÓN</span>
                 </td>
-                <td style="width: 30%; border: none; text-align: right; vertical-align: middle; font-size: 10px;">
+                <td style="width: 30%; border: none; text-align: right; vertical-align: middle; font-size: 10.5px;">
                     <b>SECRETARÍA DE SEGURIDAD CIUDADANA</b><br>
-                    <span style="color: #dc3545; font-size: 11px;">FOLIO: <?= htmlspecialchars($row['no_folio']) ?></span>
+                    <span style="color: #dc3545; font-size: 12px; font-weight: bold;">FOLIO: <?= htmlspecialchars($row['no_folio'] ?? '') ?></span>
                 </td>
             </tr>
         </table>
 
-        <table class="table-oficial" style="margin-bottom: 8px;">
+        <table class="table-oficial" style="margin-bottom: 12px;">
             <tr>
-                <td style="width: 70%; vertical-align: middle; background: #eaeaea; font-weight: bold; font-size: 11px; padding: 6px;">
+                <td style="width: 70%; vertical-align: middle; background: #eaeaea; font-weight: bold; font-size: 12px; padding: 8px;">
                     REPORTE DE ELEMENTOS OPERATIVOS LESIONADOS
                 </td>
                 <td style="width: 30%; padding: 0; border: none;">
                     <table style="width: 100%; border-collapse: collapse; text-align: center;">
                         <tr>
-                            <td colspan="3" style="border: 1px solid #000; background: #eaeaea; font-size: 8px; font-weight: bold;">FECHA</td>
+                            <td colspan="3" style="border: 1px solid #000; background: #eaeaea; font-size: 8.5px; font-weight: bold;">FECHA</td>
                         </tr>
                         <tr>
-                            <td style="border: 1px solid #000; font-size: 7.5px;">DÍA</td>
-                            <td style="border: 1px solid #000; font-size: 7.5px;">MES</td>
-                            <td style="border: 1px solid #000; font-size: 7.5px;">AÑO</td>
+                            <td style="border: 1px solid #000; font-size: 8px;">DÍA</td>
+                            <td style="border: 1px solid #000; font-size: 8px;">MES</td>
+                            <td style="border: 1px solid #000; font-size: 8px;">AÑO</td>
                         </tr>
                         <tr>
-                            <td style="border: 1px solid #000; font-weight: bold;"><?= $dia_s ?></td>
-                            <td style="border: 1px solid #000; font-weight: bold;"><?= $mes_s ?></td>
-                            <td style="border: 1px solid #000; font-weight: bold;"><?= $anio_s ?></td>
+                            <td style="border: 1px solid #000; font-weight: bold; font-size: 11px;"><?= $dia_s ?></td>
+                            <td style="border: 1px solid #000; font-weight: bold; font-size: 11px;"><?= $mes_s ?></td>
+                            <td style="border: 1px solid #000; font-weight: bold; font-size: 11px;"><?= $anio_s ?></td>
                         </tr>
                     </table>
                 </td>
@@ -156,8 +156,8 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
         </table>
 
         <!-- Datos del Elemento -->
-        <div style="border: 1px solid #000; padding: 4px; margin-bottom: 6px;">
-            <span style="font-size: 8px; font-weight: bold; display: block; margin-bottom: 3px;">NOMBRE DEL ELEMENTO (REGISTRO / PADRÓN)</span>
+        <div style="border: 1px solid #000; padding: 6px; margin-bottom: 10px;">
+            <span style="font-size: 8.5px; font-weight: bold; display: block; margin-bottom: 4px; color: #333;">NOMBRE DEL ELEMENTO (REGISTRO / PADRÓN)</span>
             <table class="table-oficial" style="margin-bottom: 0;">
                 <tr>
                     <td style="width: 32%;">
@@ -174,46 +174,46 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
                     </td>
                     <td style="width: 8%;">
                         <span class="field-label">EDAD</span>
-                        <div class="field-value"><?= htmlspecialchars($row['edad']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['edad'] ?? '') ?></div>
                     </td>
                 </tr>
                 <tr>
                     <td colspan="2">
                         <span class="field-label">SECTOR O UPC</span>
-                        <div class="field-value"><?= htmlspecialchars($row['sector_upc'] ?? $row['area_adscripcion']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['sector_upc'] ?? ($row['area_adscripcion'] ?? '')) ?></div>
                     </td>
                     <td colspan="2">
                         <span class="field-label">N.° DE EMPLEADO</span>
-                        <div class="field-value"><?= htmlspecialchars($row['no_empleado']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['no_empleado'] ?? '') ?></div>
                     </td>
                 </tr>
             </table>
         </div>
 
-        <div style="margin-bottom: 4px;">
+        <div style="margin-bottom: 6px;">
             <span class="field-label">LUGAR DE ACCIDENTE</span>
             <div class="line-write"><?= htmlspecialchars($row['lugar_accidente'] ?? '') ?></div>
         </div>
 
-        <div style="margin-bottom: 4px;">
+        <div style="margin-bottom: 6px;">
             <span class="field-label">DESCRIPCIÓN DEL ACCIDENTE</span>
-            <div class="line-write-tall"><?= htmlspecialchars($row['observaciones'] ?? $row['lesiones']) ?></div>
+            <div class="line-write-tall"><?= htmlspecialchars($row['observaciones'] ?? ($row['lesiones'] ?? '')) ?></div>
         </div>
 
         <table class="table-oficial">
             <tr>
                 <td style="width: 50%;">
                     <span class="field-label">N.° ECONÓMICO</span>
-                    <div class="field-value"><?= htmlspecialchars($row['no_economico'] ?? $row['unidad_vehicular']) ?></div>
+                    <div class="field-value"><?= htmlspecialchars($row['no_economico'] ?? ($row['unidad_vehicular'] ?? '')) ?></div>
                 </td>
                 <td style="width: 50%;">
                     <span class="field-label">N.° DE SINIESTRO</span>
-                    <div class="field-value"><?= htmlspecialchars($row['reporte']) ?></div>
+                    <div class="field-value"><?= htmlspecialchars($row['reporte'] ?? '') ?></div>
                 </td>
             </tr>
         </table>
 
-        <div style="margin-bottom: 4px;">
+        <div style="margin-bottom: 6px;">
             <span class="field-label">SUPERVISOR(A) DE RIESGOS Y ASEGURAMIENTO</span>
             <div class="line-write"><?= htmlspecialchars($row['supervisor_riesgos'] ?? '') ?></div>
         </div>
@@ -226,17 +226,17 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
                 </td>
                 <td style="width: 50%;">
                     <span class="field-label">HOSPITAL</span>
-                    <div class="field-value"><?= htmlspecialchars($row['hospital']) ?></div>
+                    <div class="field-value"><?= htmlspecialchars($row['hospital'] ?? '') ?></div>
                 </td>
             </tr>
         </table>
 
-        <div style="margin-bottom: 4px;">
+        <div style="margin-bottom: 6px;">
             <span class="field-label">DIAGNÓSTICO</span>
-            <div class="line-write"><?= htmlspecialchars($row['diagnostico'] ?? $row['lesiones']) ?></div>
+            <div class="line-write"><?= htmlspecialchars($row['diagnostico'] ?? ($row['lesiones'] ?? '')) ?></div>
         </div>
 
-        <table class="table-oficial" style="border: none; margin-bottom: 4px;">
+        <table class="table-oficial" style="border: none; margin-bottom: 6px;">
             <tr>
                 <td style="border: none; width: 50%; padding-left: 0;">
                     <span class="field-label">QUIÉN REPORTA</span>
@@ -249,7 +249,7 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
             </tr>
         </table>
 
-        <div style="margin-bottom: 4px;">
+        <div style="margin-bottom: 6px;">
             <span class="field-label">OBSERVACIONES</span>
             <div class="line-write-tall"><?= htmlspecialchars($row['observaciones'] ?? '') ?></div>
         </div>
@@ -271,10 +271,10 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
 <!-- ================================================================= -->
 <div class="sheet">
     <div>
-        <div class="fw-bold mb-2" style="font-size: 10.5px;">BITÁCORA DE SEGUIMIENTO</div>
+        <div class="fw-bold mb-3" style="font-size: 12px;">BITÁCORA DE SEGUIMIENTO</div>
 
-        <div style="border: 1px solid #000; padding: 4px; margin-bottom: 8px;">
-            <span style="font-size: 8px; font-weight: bold; display: block; margin-bottom: 3px;">LESIONADOS ENVIADOS A HOSPITALES DE RED (SEGUROS)</span>
+        <div style="border: 1px solid #000; padding: 6px; margin-bottom: 12px;">
+            <span style="font-size: 8.5px; font-weight: bold; display: block; margin-bottom: 4px;">LESIONADOS ENVIADOS A HOSPITALES DE RED (SEGUROS)</span>
 
             <table class="table-oficial" style="margin-bottom: 0;">
                 <tr>
@@ -282,7 +282,7 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
                         <span class="field-label">NOMBRE DE LESIONADO</span>
                         <div class="field-value"><?= htmlspecialchars($lesionado_completo) ?></div>
                     </td>
-                    <td colspan="3" class="text-center bg-light" style="font-weight: bold; vertical-align: middle;">
+                    <td colspan="3" class="text-center bg-light" style="font-weight: bold; vertical-align: middle; font-size: 10px;">
                         CAUSA DEL SINIESTRO
                     </td>
                 </tr>
@@ -295,11 +295,11 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
                     <td style="width: 7%;">A.P.</td>
                     <td style="width: 6%;">OTROS</td>
                 </tr>
-                <tr class="text-center">
+                <tr class="text-center" style="font-size: 10.5px;">
                     <td><?= htmlspecialchars($les_nombres) ?></td>
                     <td><?= htmlspecialchars($les_ap_pat) ?></td>
                     <td><?= htmlspecialchars($les_ap_mat) ?></td>
-                    <td><?= htmlspecialchars($row['fecha_de_siniestro']) ?></td>
+                    <td><?= htmlspecialchars($row['fecha_de_siniestro'] ?? '') ?></td>
                     <td><b><?= (stripos($row['causa_resumido'] ?? '', 'GMA') !== false || stripos($row['causa_resumido'] ?? '', 'G.M.A.') !== false)?'X':'' ?></b></td>
                     <td><b><?= (stripos($row['causa_resumido'] ?? '', 'AP') !== false || stripos($row['causa_resumido'] ?? '', 'A.P.') !== false)?'X':'' ?></b></td>
                     <td><b><?= (stripos($row['causa_resumido'] ?? '', 'OTROS') !== false)?'X':'' ?></b></td>
@@ -307,7 +307,7 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
                 <tr>
                     <td colspan="3">
                         <span class="field-label">HOSPITAL</span>
-                        <div class="field-value"><?= htmlspecialchars($row['hospital']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['hospital'] ?? '') ?></div>
                     </td>
                     <td colspan="2">
                         <span class="field-label">FECHA DE INGRESO</span>
@@ -321,8 +321,8 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
             </table>
         </div>
 
-        <div style="border: 1px solid #000; padding: 4px; margin-bottom: 8px;">
-            <span style="font-size: 8px; font-weight: bold; display: block; margin-bottom: 3px;">NOMBRE DE LA/EL FUNCIONARIA(O) DE CABINA QUE TOMA EL REPORTE</span>
+        <div style="border: 1px solid #000; padding: 6px; margin-bottom: 12px;">
+            <span style="font-size: 8.5px; font-weight: bold; display: block; margin-bottom: 4px;">NOMBRE DE LA/EL FUNCIONARIA(O) DE CABINA QUE TOMA EL REPORTE</span>
             <table class="table-oficial" style="margin-bottom: 0;">
                 <tr>
                     <td style="width: 33%;">
@@ -341,16 +341,16 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
             </table>
         </div>
 
-        <div style="margin-bottom: 6px;">
-            <span class="field-label" style="font-size: 8px;">ACTIVIDADES DESARROLLADAS POR EL FUNCIONARIO DE CABINA DE RADIO EN TURNO</span>
-            <div style="border: 1px solid #000; min-height: 140px; padding: 6px; font-weight: bold; background: #fff;">
+        <div style="margin-bottom: 10px;">
+            <span class="field-label" style="font-size: 8.5px;">ACTIVIDADES DESARROLLADAS POR EL FUNCIONARIO DE CABINA DE RADIO EN TURNO</span>
+            <div style="border: 1px solid #000; min-height: 180px; padding: 8px; font-weight: bold; background: #fff; font-size: 11px;">
                 <?= nl2br(htmlspecialchars($row['actividades_cabina'] ?? '')) ?>
             </div>
         </div>
 
         <div>
-            <span class="field-label" style="font-size: 8px;">CONCLUSIONES</span>
-            <div style="border: 1px solid #000; min-height: 100px; padding: 6px; font-weight: bold; background: #fff;">
+            <span class="field-label" style="font-size: 8.5px;">CONCLUSIONES</span>
+            <div style="border: 1px solid #000; min-height: 130px; padding: 8px; font-weight: bold; background: #fff; font-size: 11px;">
                 <?= nl2br(htmlspecialchars($row['conclusiones'] ?? '')) ?>
             </div>
         </div>

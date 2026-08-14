@@ -14,7 +14,8 @@ $fecha_hoy = date('Y-m-d');
 
 $registro = [
     'no_folio' => '', 'tipo' => 'OFICIAL', 'mes_de_reporte' => $mes_actual, 'no_empleado' => '', 'edad' => '',
-    'rfc' => '', 'nombre' => '', 'apellido_paterno' => '', 'apellido_materno' => '', 'sector_upc' => '',
+    'rfc' => '', 'nombre' => '', 'apellido_paterno' => '', 'apellido_materno' => '', 
+    'lesionado_nombre' => '', 'lesionado_ap_paterno' => '', 'lesionado_ap_materno' => '', 'sector_upc' => '',
     'fecha_de_siniestro' => $fecha_hoy, 'reporte' => '', 'poliza_seccion' => '', 'aseguradora' => '',
     'causa_resumido' => '', 'unidad_vehicular' => '', 'no_economico' => '', 'lugar_accidente' => '',
     'supervisor_riesgos' => '', 'no_ambulancia' => '', 'hospital' => '', 'requirio_hospitalizacion' => 'NO',
@@ -34,7 +35,6 @@ if (!$id) {
     $stmt->execute([$id]);
     $registro = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // Decodificar fotos si están guardadas en formato JSON o separadas por comas
     if (!empty($registro['foto'])) {
         $dec = json_decode($registro['foto'], true);
         if (is_array($dec)) {
@@ -75,20 +75,20 @@ if (!$id) {
             <form action="guardar.php" method="POST" enctype="multipart/form-data" id="formSiniestro">
                 <input type="hidden" name="id" value="<?= $id ?>">
 
-                <!-- CAMPOS TRADICIONALES SUPERIORES (INTACTOS) -->
                 <div class="row g-3">
+                    <!-- CABECERA DEL FOLIO Y BUSCADOR DE ELEMENTO POR RFC -->
                     <div class="col-md-3">
                         <label class="form-label fw-bold">No. FOLIO</label>
                         <input type="text" name="no_folio" class="form-control" value="<?= htmlspecialchars($registro['no_folio']) ?>" readonly required>
                     </div>
 
                     <div class="col-md-3">
-                        <label class="form-label fw-bold text-primary">RFC (VERIFICAR ASEGURADO)</label>
+                        <label class="form-label fw-bold text-primary">RFC DEL ELEMENTO (PADRÓN)</label>
                         <div class="input-group">
                             <input type="text" id="rfc" name="rfc" class="form-control fw-bold text-uppercase" value="<?= htmlspecialchars($registro['rfc']) ?>" placeholder="INGRESA RFC">
                             <button type="button" id="btn_verificar" class="btn btn-dark"><i class="fas fa-shield-alt"></i> Buscar</button>
                         </div>
-                        <small id="estado_asegurado" class="text-muted" style="font-size:9px;">Verifica en el padrón por RFC.</small>
+                        <small id="estado_asegurado" class="text-muted" style="font-size:9px;">Extrae datos del elemento de la base general.</small>
                     </div>
 
                     <div class="col-md-3">
@@ -101,9 +101,27 @@ if (!$id) {
                         <input type="number" id="edad" name="edad" class="form-control" value="<?= htmlspecialchars($registro['edad']) ?>">
                     </div>
 
-                    <div class="col-md-6">
-                        <label class="form-label fw-bold">NOMBRE COMPLETO</label>
+                    <!-- SECCIÓN 1: DATOS DEL ELEMENTO (OBTENIDOS DESDE EL PADRÓN POR RFC) -->
+                    <div class="col-md-12">
+                        <div class="section-header bg-secondary text-white"><i class="fas fa-id-badge me-1"></i> 1. DATOS DEL ELEMENTO (OBTENIDOS DEL PADRÓN POR RFC)</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">NOMBRE(S) DEL ELEMENTO</label>
                         <input type="text" id="nombre" name="nombre" class="form-control fw-bold" value="<?= htmlspecialchars($registro['nombre']) ?>" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">APELLIDO PATERNO DEL ELEMENTO</label>
+                        <input type="text" id="apellido_paterno" name="apellido_paterno" class="form-control fw-bold" value="<?= htmlspecialchars($registro['apellido_paterno'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">APELLIDO MATERNO DEL ELEMENTO</label>
+                        <input type="text" id="apellido_materno" name="apellido_materno" class="form-control fw-bold" value="<?= htmlspecialchars($registro['apellido_materno'] ?? '') ?>">
+                    </div>
+
+                    <!-- SECCIÓN 2: DETALLES DEL REPORTE Y SINIESTRO -->
+                    <div class="col-md-12">
+                        <div class="section-header"><i class="fas fa-car-crash me-1"></i> 2. DETALLES DEL REPORTE Y SINIESTRO</div>
                     </div>
 
                     <div class="col-md-3">
@@ -141,15 +159,15 @@ if (!$id) {
                         <input type="text" name="aseguradora" class="form-control" value="<?= htmlspecialchars($registro['aseguradora']) ?>">
                     </div>
 
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label fw-bold">CAUSA RESUMIDO</label>
                         <input type="text" name="causa_resumido" class="form-control" value="<?= htmlspecialchars($registro['causa_resumido']) ?>">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label fw-bold">UNIDAD VEHICULAR</label>
                         <input type="text" name="unidad_vehicular" class="form-control" value="<?= htmlspecialchars($registro['unidad_vehicular']) ?>">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <label class="form-label fw-bold">ÁREA DE ADSCRIPCIÓN</label>
                         <input type="text" id="area_adscripcion" name="area_adscripcion" class="form-control" value="<?= htmlspecialchars($registro['area_adscripcion']) ?>">
                     </div>
@@ -180,27 +198,31 @@ if (!$id) {
                         <textarea name="observaciones" class="form-control" rows="2"><?= htmlspecialchars($registro['observaciones']) ?></textarea>
                     </div>
 
-                    <!-- ========================================================= -->
-                    <!-- NUEVOS CAMPOS COMPLEMENTARIOS (UBICADOS EN LA PARTE BAJA) -->
-                    <!-- ========================================================= -->
+                    <!-- SECCIÓN 3: COMPLEMENTO Y DATOS ESPECÍFICOS DEL LESIONADO (LLENADO APARTE) -->
                     <div class="col-md-12">
-                        <div class="section-header"><i class="fas fa-file-alt me-1"></i> COMPLEMENTO PARA FORMATO OFICIAL Y BITÁCORA DE SEGUIMIENTO</div>
+                        <div class="section-header"><i class="fas fa-file-alt me-1"></i> 3. COMPLEMENTO, FORMATO OFICIAL Y DATOS DEL LESIONADO</div>
                     </div>
 
+                    <!-- CAMPOS EXCLUSIVOS PARA EL LESIONADO (INDEPENDIENTES DEL ELEMENTO) -->
                     <div class="col-md-4">
-                        <label class="form-label fw-bold">APELLIDO PATERNO (OFICIAL)</label>
-                        <input type="text" name="apellido_paterno" class="form-control" value="<?= htmlspecialchars($registro['apellido_paterno'] ?? '') ?>">
+                        <label class="form-label fw-bold text-danger">NOMBRE(S) DEL LESIONADO</label>
+                        <input type="text" name="lesionado_nombre" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_nombre'] ?? '') ?>" placeholder="LLENAR APARTE SI ES DISTINTO">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label fw-bold">APELLIDO MATERNO (OFICIAL)</label>
-                        <input type="text" name="apellido_materno" class="form-control" value="<?= htmlspecialchars($registro['apellido_materno'] ?? '') ?>">
+                        <label class="form-label fw-bold text-danger">APELLIDO PATERNO (LESIONADO)</label>
+                        <input type="text" name="lesionado_ap_paterno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_paterno'] ?? '') ?>">
                     </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-danger">APELLIDO MATERNO (LESIONADO)</label>
+                        <input type="text" name="lesionado_ap_materno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_materno'] ?? '') ?>">
+                    </div>
+
                     <div class="col-md-4">
                         <label class="form-label fw-bold">SECTOR O UPC</label>
                         <input type="text" name="sector_upc" class="form-control" value="<?= htmlspecialchars($registro['sector_upc'] ?? '') ?>">
                     </div>
 
-                    <div class="col-md-12">
+                    <div class="col-md-8">
                         <label class="form-label fw-bold">LUGAR DEL ACCIDENTE</label>
                         <input type="text" name="lugar_accidente" class="form-control" value="<?= htmlspecialchars($registro['lugar_accidente'] ?? '') ?>">
                     </div>
@@ -261,14 +283,11 @@ if (!$id) {
                         <label class="form-label fw-bold">CONCLUSIONES</label>
                         <textarea name="conclusiones" class="form-control" rows="3"><?= htmlspecialchars($registro['conclusiones'] ?? '') ?></textarea>
                     </div>
-                    <!-- ========================================================= -->
 
-                    <!-- SECCIÓN DE FOTOGRAFÍAS / EVIDENCIAS MÚLTIPLES INTERACTIVAS -->
+                    <!-- FOTOGRAFÍAS -->
                     <div class="col-md-12 mt-3">
                         <label class="form-label fw-bold text-danger"><i class="fas fa-camera me-1"></i> FOTOGRAFÍAS DE EVIDENCIA / LESIONES</label>
                         <input type="file" id="input_fotos" name="fotos[]" class="form-control mb-2" multiple accept="image/*">
-                        <small class="text-muted d-block mb-2" style="font-size:9px;">Seleccione las imágenes; aparecerán en miniatura abajo y podrá eliminar las que no requiera antes de guardar.</small>
-
                         <div id="contenedor_miniaturas" class="d-flex flex-wrap gap-2">
                             <?php if(!empty($registro['fotos'])): ?>
                                 <?php foreach($registro['fotos'] as $index => $ruta_foto):
@@ -302,10 +321,8 @@ document.getElementById('input_fotos').addEventListener('change', function(e) {
     for (let i = 0; i < files.length; i++) {
         let file = files[i];
         if (!file.type.match('image.*')) continue;
-
         dtFiles.items.add(file);
         let indexId = dtFiles.files.length - 1;
-
         let reader = new FileReader();
         reader.onload = function(evt) {
             let divId = 'preview_new_' + Date.now() + '_' + indexId;
@@ -326,11 +343,8 @@ function eliminarFotoNueva(divId, index) {
     $('#' + divId).remove();
     let nuevoDt = new DataTransfer();
     let currentFiles = document.getElementById('input_fotos').files;
-
     for (let i = 0; i < currentFiles.length; i++) {
-        if (i !== index) {
-            nuevoDt.items.add(currentFiles[i]);
-        }
+        if (i !== index) { nuevoDt.items.add(currentFiles[i]); }
     }
     dtFiles = nuevoDt;
     document.getElementById('input_fotos').files = dtFiles.files;
@@ -351,9 +365,31 @@ $('#btn_verificar').click(function(e) {
         dataType: 'json',
         success: function(response) {
             if(response.encontrado) {
-                $('#nombre').val(response.nombre.toUpperCase());
-                $('#no_empleado').val(response.no_empleado.toUpperCase());
-                $('#area_adscripcion').val(response.area_adscripcion.toUpperCase());
+                let nombreCompletoDB = (response.nombre || '').trim();
+                let apPaterno = (response.apellido_paterno || '').trim();
+                let apMaterno = (response.apellido_materno || '').trim();
+                let soloNombre = nombreCompletoDB;
+
+                // Separar automáticamente si vienen unidos en la base principal
+                if (apPaterno === '' && nombreCompletoDB !== '') {
+                    let partes = nombreCompletoDB.replace(/\s+/g, ' ').split(' ');
+                    if (partes.length >= 3) {
+                        apMaterno = partes.pop();
+                        apPaterno = partes.pop();
+                        soloNombre = partes.join(' ');
+                    } else if (partes.length === 2) {
+                        apPaterno = partes.pop();
+                        soloNombre = partes.join(' ');
+                    }
+                }
+
+                // Asignar a los campos correspondientes del ELEMENTO
+                $('#nombre').val(soloNombre.toUpperCase());
+                $('#apellido_paterno').val(apPaterno.toUpperCase());
+                $('#apellido_materno').val(apMaterno.toUpperCase());
+                
+                $('#no_empleado').val((response.no_empleado || '').toUpperCase());
+                $('#area_adscripcion').val((response.area_adscripcion || '').toUpperCase());
 
                 if (response.edad) {
                     $('#edad').val(response.edad);
@@ -366,13 +402,13 @@ $('#btn_verificar').click(function(e) {
                     if(edadAprox > 15 && edadAprox < 90) { $('#edad').val(edadAprox); }
                 }
 
-                $('#estado_asegurado').html('<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> VERIFICADO: ENCONTRADO EN LA BASE DE ASEGURADOS.</span>');
+                $('#estado_asegurado').html('<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> VERIFICADO: ELEMENTO ENCONTRADO EN PADRÓN.</span>');
             } else {
                 let continuar = confirm('⚠️ EL RFC INGRESADO NO FUE ENCONTRADO EN LA BASE GENERAL DE ASEGURADOS.\n\n¿Desea continuar y agregarlo bajo su propio riesgo?');
                 if(!continuar) {
                     $('#rfc').val('').focus();
                 } else {
-                    $('#estado_asegurado').html('<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle"></i> NO ENCONTRADO EN BASE GENERAL (BAJO PROPIO RIESGO).</span>');
+                    $('#estado_asegurado').html('<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle"></i> NO ENCONTRADO EN BASE GENERAL.</span>');
                 }
             }
         },

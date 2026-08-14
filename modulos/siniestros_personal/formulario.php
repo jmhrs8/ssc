@@ -14,7 +14,7 @@ $fecha_hoy = date('Y-m-d');
 
 $registro = [
     'no_folio' => '', 'tipo' => 'OFICIAL', 'mes_de_reporte' => $mes_actual, 'no_empleado' => '', 'edad' => '',
-    'rfc' => '', 'nombre' => '', 'apellido_paterno' => '', 'apellido_materno' => '', 
+    'rfc' => '', 'nombre' => '', 'apellido_paterno' => '', 'apellido_materno' => '',
     'lesionado_nombre' => '', 'lesionado_ap_paterno' => '', 'lesionado_ap_materno' => '', 'sector_upc' => '',
     'fecha_de_siniestro' => $fecha_hoy, 'reporte' => '', 'poliza_seccion' => '', 'aseguradora' => '',
     'causa_resumido' => '', 'unidad_vehicular' => '', 'no_economico' => '', 'lugar_accidente' => '',
@@ -160,16 +160,22 @@ if (!$id) {
                     </div>
 
                     <div class="col-md-3">
-                        <label class="form-label fw-bold">CAUSA RESUMIDO</label>
-                        <input type="text" name="causa_resumido" class="form-control" value="<?= htmlspecialchars($registro['causa_resumido']) ?>">
+                        <label class="form-label fw-bold">CAUSA DEL SINIESTRO</label>
+                        <select name="causa_resumido" class="form-select">
+                            <option value="">-- SELECCIONE --</option>
+                            <option value="G.M.A." <?= (stristr($registro['causa_resumido'], 'GMA') !== false || stristr($registro['causa_resumido'], 'G.M.A.') !== false) ? 'selected' : '' ?>>G.M.A. (GASTOS MÉDICOS MAYORES)</option>
+                            <option value="A.P." <?= (stristr($registro['causa_resumido'], 'AP') !== false || stristr($registro['causa_resumido'], 'A.P.') !== false) ? 'selected' : '' ?>>A.P. (ACCIDENTES PERSONALES)</option>
+                            <option value="OTROS" <?= (stristr($registro['causa_resumido'], 'OTROS') !== false) ? 'selected' : '' ?>>OTROS</option>
+                        </select>
                     </div>
+
                     <div class="col-md-3">
                         <label class="form-label fw-bold">UNIDAD VEHICULAR</label>
                         <input type="text" name="unidad_vehicular" class="form-control" value="<?= htmlspecialchars($registro['unidad_vehicular']) ?>">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-bold">ÁREA DE ADSCRIPCIÓN</label>
-                        <input type="text" id="area_adscripcion" name="area_adscripcion" class="form-control" value="<?= htmlspecialchars($registro['area_adscripcion']) ?>">
+                        <input type="text" id="area_adscripcion" name="area_adscripcion" class="form-control" value="<?= htmlspecialchars($registro['area_adscripcion'] ?? '') ?>">
                     </div>
 
                     <div class="col-md-4">
@@ -198,12 +204,11 @@ if (!$id) {
                         <textarea name="observaciones" class="form-control" rows="2"><?= htmlspecialchars($registro['observaciones']) ?></textarea>
                     </div>
 
-                    <!-- SECCIÓN 3: COMPLEMENTO Y DATOS ESPECÍFICOS DEL LESIONADO (LLENADO APARTE) -->
+                    <!-- SECCIÓN 3: COMPLEMENTO Y DATOS ESPECÍFICOS DEL LESIONADO -->
                     <div class="col-md-12">
                         <div class="section-header"><i class="fas fa-file-alt me-1"></i> 3. COMPLEMENTO, FORMATO OFICIAL Y DATOS DEL LESIONADO</div>
                     </div>
 
-                    <!-- CAMPOS EXCLUSIVOS PARA EL LESIONADO (INDEPENDIENTES DEL ELEMENTO) -->
                     <div class="col-md-4">
                         <label class="form-label fw-bold text-danger">NOMBRE(S) DEL LESIONADO</label>
                         <input type="text" name="lesionado_nombre" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_nombre'] ?? '') ?>" placeholder="LLENAR APARTE SI ES DISTINTO">
@@ -387,7 +392,7 @@ $('#btn_verificar').click(function(e) {
                 $('#nombre').val(soloNombre.toUpperCase());
                 $('#apellido_paterno').val(apPaterno.toUpperCase());
                 $('#apellido_materno').val(apMaterno.toUpperCase());
-                
+
                 $('#no_empleado').val((response.no_empleado || '').toUpperCase());
                 $('#area_adscripcion').val((response.area_adscripcion || '').toUpperCase());
 

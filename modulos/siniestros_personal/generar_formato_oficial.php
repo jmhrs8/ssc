@@ -40,42 +40,31 @@ if (empty($elem_ap_pat) && $elem_nombre_db !== '') {
     }
 }
 
-// --- 2. PROCESAMIENTO DE DATOS DEL LESIONADO ---
-$les_nombre_db = trim($row['lesionado_nombre'] ?? '');
-$les_ap_pat    = trim($row['lesionado_ap_paterno'] ?? '');
-$les_ap_mat    = trim($row['lesionado_ap_materno'] ?? '');
-
-if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
-    $les_nombres = $les_nombre_db;
-    $lesionado_completo = trim($les_nombres . ' ' . $les_ap_pat . ' ' . $les_ap_mat);
-} else {
-    // Si no se capturó lesionado aparte, toma los datos del elemento
-    $les_nombres = $elem_nombres;
-    $les_ap_pat  = $elem_ap_pat;
-    $les_ap_mat  = $elem_ap_mat;
-    $lesionado_completo = trim($les_nombres . ' ' . $les_ap_pat . ' ' . $les_ap_mat);
-}
+// --- 2. PROCESAMIENTO DE DATOS DEL LESIONADO (CAMPOS CAPTURADOS) ---
+$les_nombres = trim($row['lesionado_nombre'] ?? '');
+$les_ap_pat  = trim($row['lesionado_ap_paterno'] ?? '');
+$les_ap_mat  = trim($row['lesionado_ap_materno'] ?? '');
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>REPORTE OFICIAL - <?= htmlspecialchars($row['no_folio']) ?></title>
+    <title>REPORTE OFICIAL - <?= htmlspecialchars($row['no_folio'] ?? 'S/F') ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body { background: #444; font-family: 'Arial', sans-serif; font-size: 10px; color: #000; text-transform: uppercase; margin: 0; padding: 20px 0; }
-        
-        .sheet { 
-            width: 215mm; 
-            min-height: 279mm; 
-            padding: 15mm 18mm; 
-            margin: 0 auto 20mm auto; 
-            background: white; 
-            position: relative; 
-            box-sizing: border-box; 
-            box-shadow: 0 0 12px rgba(0,0,0,0.6); 
-            page-break-after: always; 
+
+        .sheet {
+            width: 215mm;
+            min-height: 279mm;
+            padding: 15mm 18mm;
+            margin: 0 auto 20mm auto;
+            background: white;
+            position: relative;
+            box-sizing: border-box;
+            box-shadow: 0 0 12px rgba(0,0,0,0.6);
+            page-break-after: always;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -114,18 +103,18 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
 <!-- ================================================================= -->
 <div class="sheet">
     <div>
-        <!-- Cabecera Institucional con Logotipo Ajustado y Grande -->
+        <!-- Cabecera Institucional con Logotipo Aumentado un 45% -->
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px; border: none;">
             <tr>
-                <td style="width: 28%; border: none; vertical-align: middle;">
-                    <img src="../../uploads/sistema/logo_ssc.png" alt="Logo SSC" style="max-height: 100px; max-width: 100%; object-fit: contain;" onerror="this.style.display='none'">
+                <td style="width: 35%; border: none; vertical-align: middle;">
+                    <img src="../../uploads/sistema/logo_ssc.png" alt="Logo SSC" style="max-height: 200px; width: auto; max-width: 100%; object-fit: contain;" onerror="this.style.display='none'">
                 </td>
-                <td style="width: 42%; border: none; text-align: center; vertical-align: middle; font-size: 11px; line-height: 1.3;">
+                <td style="width: 35%; border: none; text-align: center; vertical-align: middle; font-size: 11px; line-height: 1.3;">
                     <b>CIUDAD DE MÉXICO</b><br><span style="font-size: 9.5px; color: #444;">CAPITAL DE LA TRANSFORMACIÓN</span>
                 </td>
                 <td style="width: 30%; border: none; text-align: right; vertical-align: middle; font-size: 10.5px;">
                     <b>SECRETARÍA DE SEGURIDAD CIUDADANA</b><br>
-                    <span style="color: #dc3545; font-size: 12px; font-weight: bold;">FOLIO: <?= htmlspecialchars($row['no_folio']) ?></span>
+                    <span style="color: #dc3545; font-size: 12px; font-weight: bold;">FOLIO: <?= htmlspecialchars($row['no_folio'] ?? '') ?></span>
                 </td>
             </tr>
         </table>
@@ -174,17 +163,17 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
                     </td>
                     <td style="width: 8%;">
                         <span class="field-label">EDAD</span>
-                        <div class="field-value"><?= htmlspecialchars($row['edad']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['edad'] ?? '') ?></div>
                     </td>
                 </tr>
                 <tr>
                     <td colspan="2">
                         <span class="field-label">SECTOR O UPC</span>
-                        <div class="field-value"><?= htmlspecialchars($row['sector_upc'] ?? $row['area_adscripcion']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['sector_upc'] ?? ($row['area_adscripcion'] ?? '')) ?></div>
                     </td>
                     <td colspan="2">
                         <span class="field-label">N.° DE EMPLEADO</span>
-                        <div class="field-value"><?= htmlspecialchars($row['no_empleado']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['no_empleado'] ?? '') ?></div>
                     </td>
                 </tr>
             </table>
@@ -197,18 +186,18 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
 
         <div style="margin-bottom: 6px;">
             <span class="field-label">DESCRIPCIÓN DEL ACCIDENTE</span>
-            <div class="line-write-tall"><?= htmlspecialchars($row['observaciones'] ?? $row['lesiones']) ?></div>
+            <div class="line-write-tall"><?= htmlspecialchars($row['observaciones'] ?? ($row['lesiones'] ?? '')) ?></div>
         </div>
 
         <table class="table-oficial">
             <tr>
                 <td style="width: 50%;">
                     <span class="field-label">N.° ECONÓMICO</span>
-                    <div class="field-value"><?= htmlspecialchars($row['no_economico'] ?? $row['unidad_vehicular']) ?></div>
+                    <div class="field-value"><?= htmlspecialchars($row['no_economico'] ?? ($row['unidad_vehicular'] ?? '')) ?></div>
                 </td>
                 <td style="width: 50%;">
                     <span class="field-label">N.° DE SINIESTRO</span>
-                    <div class="field-value"><?= htmlspecialchars($row['reporte']) ?></div>
+                    <div class="field-value"><?= htmlspecialchars($row['reporte'] ?? '') ?></div>
                 </td>
             </tr>
         </table>
@@ -226,14 +215,14 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
                 </td>
                 <td style="width: 50%;">
                     <span class="field-label">HOSPITAL</span>
-                    <div class="field-value"><?= htmlspecialchars($row['hospital']) ?></div>
+                    <div class="field-value"><?= htmlspecialchars($row['hospital'] ?? '') ?></div>
                 </td>
             </tr>
         </table>
 
         <div style="margin-bottom: 6px;">
             <span class="field-label">DIAGNÓSTICO</span>
-            <div class="line-write"><?= htmlspecialchars($row['diagnostico'] ?? $row['lesiones']) ?></div>
+            <div class="line-write"><?= htmlspecialchars($row['diagnostico'] ?? ($row['lesiones'] ?? '')) ?></div>
         </div>
 
         <table class="table-oficial" style="border: none; margin-bottom: 6px;">
@@ -277,37 +266,26 @@ if (!empty($les_nombre_db) || !empty($les_ap_pat) || !empty($les_ap_mat)) {
             <span style="font-size: 8.5px; font-weight: bold; display: block; margin-bottom: 4px;">LESIONADOS ENVIADOS A HOSPITALES DE RED (SEGUROS)</span>
 
             <table class="table-oficial" style="margin-bottom: 0;">
-                <tr>
-                    <td colspan="4">
-                        <span class="field-label">NOMBRE DE LESIONADO</span>
-                        <div class="field-value"><?= htmlspecialchars($lesionado_completo) ?></div>
-                    </td>
-                    <td colspan="3" class="text-center bg-light" style="font-weight: bold; vertical-align: middle; font-size: 10px;">
-                        CAUSA DEL SINIESTRO
-                    </td>
-                </tr>
                 <tr class="text-center" style="background: #f2f2f2;">
                     <td style="width: 25%;">NOMBRE(S)</td>
                     <td style="width: 20%;">APELLIDO PATERNO</td>
                     <td style="width: 20%;">APELLIDO MATERNO</td>
                     <td style="width: 15%;">FECHA DE SINIESTRO</td>
-                    <td style="width: 7%;">G.M.A.</td>
-                    <td style="width: 7%;">A.P.</td>
-                    <td style="width: 6%;">OTROS</td>
+                    <td colspan="3" style="width: 20%; font-size: 10px; font-weight: bold; vertical-align: middle;">CAUSA DEL SINIESTRO</td>
                 </tr>
                 <tr class="text-center" style="font-size: 10.5px;">
                     <td><?= htmlspecialchars($les_nombres) ?></td>
                     <td><?= htmlspecialchars($les_ap_pat) ?></td>
                     <td><?= htmlspecialchars($les_ap_mat) ?></td>
-                    <td><?= htmlspecialchars($row['fecha_de_siniestro']) ?></td>
-                    <td><b><?= (stripos($row['causa_resumido'] ?? '', 'GMA') !== false || stripos($row['causa_resumido'] ?? '', 'G.M.A.') !== false)?'X':'' ?></b></td>
-                    <td><b><?= (stripos($row['causa_resumido'] ?? '', 'AP') !== false || stripos($row['causa_resumido'] ?? '', 'A.P.') !== false)?'X':'' ?></b></td>
-                    <td><b><?= (stripos($row['causa_resumido'] ?? '', 'OTROS') !== false)?'X':'' ?></b></td>
+                    <td><?= htmlspecialchars($row['fecha_de_siniestro'] ?? '') ?></td>
+                    <td style="font-size: 9px;">G.M.A.<br><b><?= (stripos($row['causa_resumido'] ?? '', 'GMA') !== false || stripos($row['causa_resumido'] ?? '', 'G.M.A.') !== false)?'X':'' ?></b></td>
+                    <td style="font-size: 9px;">A.P.<br><b><?= (stripos($row['causa_resumido'] ?? '', 'AP') !== false || stripos($row['causa_resumido'] ?? '', 'A.P.') !== false)?'X':'' ?></b></td>
+                    <td style="font-size: 9px;">OTROS<br><b><?= (stripos($row['causa_resumido'] ?? '', 'OTROS') !== false)?'X':'' ?></b></td>
                 </tr>
                 <tr>
                     <td colspan="3">
                         <span class="field-label">HOSPITAL</span>
-                        <div class="field-value"><?= htmlspecialchars($row['hospital']) ?></div>
+                        <div class="field-value"><?= htmlspecialchars($row['hospital'] ?? '') ?></div>
                     </td>
                     <td colspan="2">
                         <span class="field-label">FECHA DE INGRESO</span>
