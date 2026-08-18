@@ -1,3 +1,4 @@
+
 <?php
 require_once "../../config/conexion.php";
 
@@ -409,7 +410,7 @@ $('#btn_verificar').click(function(e) {
 
                 $('#estado_asegurado').html('<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> VERIFICADO: ELEMENTO ENCONTRADO EN PADRÓN.</span>');
             } else {
-                let continuar = confirm('⚠️ EL RFC INGRESADO NO FUE ENCONTRADO EN LA BASE GENERAL DE ASEGURADOS.\n\n¿Desea continuar y agregarlo bajo su propio riesgo?');
+                let continuar = confirm('⚠️ EL RFC INGRESADO NO FUE ENCONTRADO EN LA BASE GENERAL DE ASEGURADOS.\n\n¿Desea continuar el usuario al parecer no esta asegurado?');
                 if(!continuar) {
                     $('#rfc').val('').focus();
                 } else {
