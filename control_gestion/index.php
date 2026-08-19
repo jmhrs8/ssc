@@ -191,7 +191,7 @@ try {
             <div class="modal-body row g-2" style="font-size:0.8rem;">
                 <input type="hidden" id="id_registro" name="id_registro">
                 <div class="col-md-6">
-                    <label class="form-label fw-bold mb-0">Número de Oficio:</label>
+                    <label class="form-label fw-bold mb-0">Datos del Oficio:</label>
                     <input type="text" id="numero_oficio" name="numero_oficio" class="form-control form-control-sm" required oninput="this.value = this.value.toUpperCase()">
                 </div>
                 <div class="col-md-6">
