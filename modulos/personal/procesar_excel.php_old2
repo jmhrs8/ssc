@@ -1,0 +1,125 @@
+<?php
+session_start();
+
+// Forzar límites más altos en tiempo de ejecución
+set_time_limit(900);
+ini_set('memory_limit', '1024M');
+
+require '../../vendor/autoload.php';
+require_once "../../config/conexion.php";
+
+use PhpOffice\PhpSpreadsheet\IOFactory;
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['archivo_excel'])) {
+    $file = $_FILES['archivo_excel']['tmp_name'];
+
+    $nuevos = 0;
+    $duplicados = 0;
+    $errores_detallados = [];
+
+    try {
+        // LECTURA OPTIMIZADA PARA VMWARE
+        $reader = IOFactory::createReaderForFile($file);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($file);
+        $rows = $spreadsheet->getActiveSheet()->toArray();
+
+        // Preparar sentencia para verificar si el RFC ya existe
+        $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM personal WHERE rfc = ?");
+
+        // Sentencia de inserción original
+        $sql = "INSERT INTO personal (
+            apellido_paterno, apellido_materno, nombre, rfc, area_adscripcion,
+            puesto, descripcion_via_publica, tipo_contratacion, fecha_alta, quincena
+        ) VALUES (?,?,?,?,?,?,?,?,?,?)";
+
+        $stmt_insert = $pdo->prepare($sql);
+
+        $pdo->beginTransaction();
+
+        foreach ($rows as $index => $row) {
+            // Omitir cabecera o filas vacías basadas en tu lógica original
+            if ($index == 0 || empty(trim($row[0] ?? ''))) continue;
+
+            $num_fila_excel = $index + 1;
+
+            try {
+                $paterno   = mb_strtoupper(trim($row[0] ?? ''));
+                $materno   = mb_strtoupper(trim($row[1] ?? ''));
+                $nombre    = mb_strtoupper(trim($row[2] ?? ''));
+                $rfc       = mb_strtoupper(trim($row[3] ?? ''));
+                $nombre_completo = "$nombre $paterno";
+
+                // Validación 1: RFC vacío
+                if (empty($rfc)) {
+                    $errores_detallados[] = "Fila $num_fila_excel ($nombre_completo): El campo RFC está vacío.";
+                    continue;
+                }
+
+                // Validación 2: Longitud del RFC (Máximo 13 caracteres para evitar error 1406)
+                if (mb_strlen($rfc) > 13) {
+                    $errores_detallados[] = "Fila $num_fila_excel ($nombre_completo): El RFC '$rfc' excede los 13 caracteres permitidos (" . mb_strlen($rfc) . " caracteres).";
+                    continue;
+                }
+
+                // 1. Verificar si el RFC ya existe en la base de datos (Duplicado)
+                $stmt_check->execute([$rfc]);
+                if ($stmt_check->fetchColumn() > 0) {
+                    $duplicados++;
+                    continue; // Se omite la inserción y se cuenta como duplicado
+                }
+
+                // 2. Procesar Fecha de Alta (Manteniendo tu lógica exacta)
+                $f_alta = null;
+                if (!empty($row[8])) {
+                    $f_alta = is_numeric($row[8])
+                        ? date('Y-m-d', ($row[8] - 25569) * 86400)
+                        : date('Y-m-d', strtotime(str_replace('/', '-', $row[8])));
+                }
+
+                // Lógica Base/Eventual
+                $tipo_txt = strtoupper(trim($row[7] ?? ''));
+                $tipo_con = (strpos($tipo_txt, 'EVE') !== false) ? 'EVENTUAL' : 'BASE';
+
+                // 3. Ejecutar inserción del nuevo registro
+                $stmt_insert->execute([
+                    $paterno,
+                    $materno,
+                    $nombre,
+                    $rfc,
+                    mb_strtoupper(trim($row[4] ?? '')), // ADSCRIPCION
+                    mb_strtoupper(trim($row[5] ?? '')), // PUESTO
+                    mb_strtoupper(trim($row[6] ?? '')), // DESCRIPCION TRABAJO
+                    $tipo_con,                           // BASE/EVENTUAL
+                    $f_alta,                             // FECHA ALTA
+                    mb_strtoupper(trim($row[9] ?? ''))  // QUINCENA
+                ]);
+
+                $nuevos++;
+
+            } catch (Exception $row_ex) {
+                // Registrar cualquier otro error específico de la fila sin romper el lote
+                $errores_detallados[] = "Fila $num_fila_excel: " . $row_ex->getMessage();
+            }
+        }
+
+        $pdo->commit();
+
+        // Guardar resultados detallados en sesión para mostrarlos en la ventana informativa
+        $_SESSION['resultado_importacion'] = [
+            'nuevos' => $nuevos,
+            'duplicados' => $duplicados,
+            'errores' => count($errores_detallados),
+            'detalle_errores' => $errores_detallados
+        ];
+
+        // Redireccionar de vuelta a subir_excel.php
+        header("Location: subir_excel.php");
+        exit;
+
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        die("Error crítico en el proceso: " . $e->getMessage());
+    }
+}
+?>
