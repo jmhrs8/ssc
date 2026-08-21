@@ -11,9 +11,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $no_empleado = $_POST['no_empleado'] ?? '';
         $edad = $_POST['edad'] !== '' ? $_POST['edad'] : null;
         $rfc = $_POST['rfc'] ?? '';
+        
+        // Datos del Elemento (obtenidos del padrón por RFC)
         $nombre = $_POST['nombre'] ?? '';
         $apellido_paterno = $_POST['apellido_paterno'] ?? '';
         $apellido_materno = $_POST['apellido_materno'] ?? '';
+
+        // Datos del Lesionado (Llenados aparte en el formulario)
+        $lesionado_nombre = $_POST['lesionado_nombre'] ?? '';
+        $lesionado_ap_paterno = $_POST['lesionado_ap_paterno'] ?? '';
+        $lesionado_ap_materno = $_POST['lesionado_ap_materno'] ?? '';
+
         $sector_upc = $_POST['sector_upc'] ?? '';
         $fecha_de_siniestro = !empty($_POST['fecha_de_siniestro']) ? $_POST['fecha_de_siniestro'] : null;
         $reporte = $_POST['reporte'] ?? '';
@@ -36,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $observaciones = $_POST['observaciones'] ?? '';
         $montos_erogados = $_POST['montos_erogados'] !== '' ? $_POST['montos_erogados'] : 0.00;
 
-        // Nuevos campos de bitácora y cabina
+        // Campos de bitácora y cabina
         $cabina_nombre = $_POST['cabina_nombre'] ?? '';
         $cabina_ap_paterno = $_POST['cabina_ap_paterno'] ?? '';
         $cabina_ap_materno = $_POST['cabina_ap_materno'] ?? '';
@@ -72,22 +80,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (empty($id)) {
             // INSERTAR NUEVO REGISTRO
             $sql = "INSERT INTO siniestros_personal (
-                no_folio, tipo, mes_de_reporte, no_empleado, edad, rfc, nombre, 
-                apellido_paterno, apellido_materno, sector_upc, fecha_de_siniestro, 
-                reporte, poliza_seccion, aseguradora, causa_resumido, unidad_vehicular, 
-                no_economico, lugar_accidente, supervisor_riesgos, no_ambulancia, 
-                hospital, requirio_hospitalizacion, fecha_ingreso_hospital, hora_ingreso_hospital, 
-                diagnostico, lesiones, quien_reporta, quien_recibe, observaciones, 
-                montos_erogados, cabina_nombre, cabina_ap_paterno, cabina_ap_materno, 
+                no_folio, tipo, mes_de_reporte, no_empleado, edad, rfc, nombre,
+                apellido_paterno, apellido_materno, lesionado_nombre, lesionado_ap_paterno, lesionado_ap_materno, 
+                sector_upc, fecha_de_siniestro, reporte, poliza_seccion, aseguradora, causa_resumido, 
+                unidad_vehicular, no_economico, lugar_accidente, supervisor_riesgos, no_ambulancia,
+                hospital, requirio_hospitalizacion, fecha_ingreso_hospital, hora_ingreso_hospital,
+                diagnostico, lesiones, quien_reporta, quien_recibe, observaciones,
+                montos_erogados, cabina_nombre, cabina_ap_paterno, cabina_ap_materno,
                 actividades_cabina, conclusiones, foto
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
                 $no_folio, $tipo, $mes_de_reporte, $no_empleado, $edad, $rfc, $nombre,
-                $apellido_paterno, $apellido_materno, $sector_upc, $fecha_de_siniestro,
-                $reporte, $poliza_seccion, $aseguradora, $causa_resumido, $unidad_vehicular,
-                $no_economico, $lugar_accidente, $supervisor_riesgos, $no_ambulancia,
+                $apellido_paterno, $apellido_materno, $lesionado_nombre, $lesionado_ap_paterno, $lesionado_ap_materno,
+                $sector_upc, $fecha_de_siniestro, $reporte, $poliza_seccion, $aseguradora, $causa_resumido,
+                $unidad_vehicular, $no_economico, $lugar_accidente, $supervisor_riesgos, $no_ambulancia,
                 $hospital, $requirio_hospitalizacion, $fecha_ingreso_hospital, $hora_ingreso_hospital,
                 $diagnostico, $lesiones, $quien_reporta, $quien_recibe, $observaciones,
                 $montos_erogados, $cabina_nombre, $cabina_ap_paterno, $cabina_ap_materno,
@@ -95,26 +103,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             ]);
         } else {
             // ACTUALIZAR REGISTRO EXISTENTE
-            $sql = "UPDATE siniestros_personal SET 
-                tipo=?, mes_de_reporte=?, no_empleado=?, edad=?, rfc=?, nombre=?, 
-                apellido_paterno=?, apellido_materno=?, sector_upc=?, fecha_de_siniestro=?, 
-                reporte=?, poliza_seccion=?, aseguradora=?, causa_resumido=?, unidad_vehicular=?, 
-                no_economico=?, lugar_accidente=?, supervisor_riesgos=?, no_ambulancia=?, 
-                hospital=?, requirio_hospitalizacion=?, fecha_ingreso_hospital=?, hora_ingreso_hospital=?, 
-                diagnostico=?, lesiones=?, quien_reporta=?, quien_recibe=?, observaciones=?, 
-                montos_erogados=?, cabina_nombre=?, cabina_ap_paterno=?, cabina_ap_materno=?, 
-                actividades_cabina=?, conclusiones=?, foto=? 
+            $sql = "UPDATE siniestros_personal SET
+                tipo=?, mes_de_reporte=?, no_empleado=?, edad=?, rfc=?, nombre=?,
+                apellido_paterno=?, apellido_materno=?, lesionado_nombre=?, lesionado_ap_paterno=?, lesionado_ap_materno=?, 
+                sector_upc=?, fecha_de_siniestro=?, reporte=?, poliza_seccion=?, aseguradora=?, 
+                causa_resumido=?, unidad_vehicular=?, no_economico=?, lugar_accidente=?, supervisor_riesgos=?, 
+                no_ambulancia=?, hospital=?, requirio_hospitalizacion=?, fecha_ingreso_hospital=?, 
+                hora_ingreso_hospital=?, diagnostico=?, lesiones=?, quien_reporta=?, quien_recibe=?, 
+                observaciones=?, montos_erogados=?, cabina_nombre=?, cabina_ap_paterno=?, cabina_ap_materno=?,
+                actividades_cabina=?, conclusiones=?, foto=?
             WHERE id=?";
-            
+
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
                 $tipo, $mes_de_reporte, $no_empleado, $edad, $rfc, $nombre,
-                $apellido_paterno, $apellido_materno, $sector_upc, $fecha_de_siniestro,
-                $reporte, $poliza_seccion, $aseguradora, $causa_resumido, $unidad_vehicular,
-                $no_economico, $lugar_accidente, $supervisor_riesgos, $no_ambulancia,
-                $hospital, $requirio_hospitalizacion, $fecha_ingreso_hospital, $hora_ingreso_hospital,
-                $diagnostico, $lesiones, $quien_reporta, $quien_recibe, $observaciones,
-                $montos_erogados, $cabina_nombre, $cabina_ap_paterno, $cabina_ap_materno,
+                $apellido_paterno, $apellido_materno, $lesionado_nombre, $lesionado_ap_paterno, $lesionado_ap_materno,
+                $sector_upc, $fecha_de_siniestro, $reporte, $poliza_seccion, $aseguradora,
+                $causa_resumido, $unidad_vehicular, $no_economico, $lugar_accidente, $supervisor_riesgos,
+                $no_ambulancia, $hospital, $requirio_hospitalizacion, $fecha_ingreso_hospital,
+                $hora_ingreso_hospital, $diagnostico, $lesiones, $quien_reporta, $quien_recibe,
+                $observaciones, $montos_erogados, $cabina_nombre, $cabina_ap_paterno, $cabina_ap_materno,
                 $actividades_cabina, $conclusiones, $foto_json, $id
             ]);
         }

@@ -24,35 +24,17 @@ $es_solo_lectura  = ($nivel_actual === 'LECTURA');
 $search = $_GET['buscar'] ?? '';
 
 try {
-    // Definimos los campos por los que se permitirá realizar la búsqueda global
-    $campos_busqueda = [
-        'poliza', 'serie_matricula_1', 'no_expediente', 'no_siniestro', 
-        'marca', 'modelo', 'aseguradora', 'despacho', 'tipo_bien', 
-        'tipo_siniestro', 'tipo_dano', 'status_seguro', 'status_tramite', 
-        'folio_sdra', 'atendio'
-    ];
-
-    $where_clauses = [];
-    $params = [];
-
-    if (!empty($search)) {
-        foreach ($campos_busqueda as $campo) {
-            $where_clauses[] = "$campo LIKE ?";
-            $params[] = "%$search%";
-        }
-        $sql_where = "WHERE " . implode(" OR ", $where_clauses);
-    } else {
-        $sql_where = "";
-    }
-
+    // Consulta original con el ajuste de días hacia fecha_acuse
     $query = "SELECT *,
               DATEDIFF(CURDATE(), fecha_acuse) as dias_post_acuse
-              FROM inventario_armas 
-              $sql_where
+              FROM inventario_armas WHERE
+              poliza LIKE ? OR serie_matricula_1 LIKE ? OR no_expediente LIKE ?
+              OR no_siniestro LIKE ? OR marca LIKE ? OR modelo LIKE ?
               ORDER BY id ASC";
 
     $stmt = $pdo->prepare($query);
-    $stmt->execute($params);
+    $term = "%$search%";
+    $stmt->execute([$term, $term, $term, $term, $term, $term]);
     $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $stats = $pdo->query("SELECT COUNT(*) as total FROM inventario_armas")->fetch();
@@ -131,7 +113,7 @@ try {
         <div class="card-body py-2">
             <form method="GET" class="row g-2">
                 <div class="col-md-10">
-                    <input type="text" name="buscar" class="form-control form-control-sm" placeholder="BUSCAR PÓLIZA, SERIE, EXPEDIENTE, MARCA, MODELO, ASEGURADORA..." value="<?= htmlspecialchars($search) ?>">
+                    <input type="text" name="buscar" class="form-control form-control-sm" placeholder="BUSCAR PÓLIZA, SERIE, EXPEDIENTE, MARCA, MODELO..." value="<?= htmlspecialchars($search) ?>">
                 </div>
                 <div class="col-md-2 d-flex gap-2">
                     <button type="submit" class="btn btn-dark btn-sm w-100">FILTRAR</button>
@@ -212,7 +194,7 @@ try {
                             <div class="btn-group">
                                 <!-- Botón PDF siempre visible -->
                                 <a href="captura_siniestro_armas.php?id=<?= $r['id'] ?>" class="btn btn-danger btn-sm" title="PDF Reclamo"><i class="fas fa-file-pdf"></i></a>
-
+                                
                                 <!-- --- MODIFICACIÓN DE SEGURIDAD (Botones Editar/Borrar) --- -->
                                 <?php if (!$es_solo_lectura): ?>
                                     <a href="formulario.php?id=<?= $r['id'] ?>" class="btn btn-warning btn-sm" title="Editar"><i class="fas fa-edit"></i></a>
@@ -226,45 +208,45 @@ try {
                                 <!-- --- FIN DE MODIFICACIÓN --- -->
                             </div>
                         </td>
-                        <td><?= htmlspecialchars($r['poliza'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['tipo_bien'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['tipo_siniestro'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['anio_vigencia'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['fecha_siniestro_1'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['no_siniestro'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['despacho'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['aseguradora'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['status_seguro'] ?? '') ?></td>
-                        <td class="fw-bold"><?= htmlspecialchars($r['no_expediente'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['tipo_dano'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['fecha_reclamacion'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['mes_reclamacion'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['marca'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['modelo'] ?? '') ?></td>
-                        <td class="text-primary fw-bold"><?= htmlspecialchars($r['serie_matricula_1'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['status_tramite'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['siniestro_detalle'] ?? '') ?></td>
+                        <td><?= $r['poliza'] ?></td>
+                        <td><?= $r['tipo_bien'] ?></td>
+                        <td><?= $r['tipo_siniestro'] ?></td>
+                        <td><?= $r['anio_vigencia'] ?></td>
+                        <td><?= $r['fecha_siniestro_1'] ?></td>
+                        <td><?= $r['no_siniestro'] ?></td>
+                        <td><?= $r['despacho'] ?></td>
+                        <td><?= $r['aseguradora'] ?></td>
+                        <td><?= $r['status_seguro'] ?></td>
+                        <td class="fw-bold"><?= $r['no_expediente'] ?></td>
+                        <td><?= $r['tipo_dano'] ?></td>
+                        <td><?= $r['fecha_reclamacion'] ?></td>
+                        <td><?= $r['mes_reclamacion'] ?? '' ?></td>
+                        <td><?= $r['marca'] ?></td>
+                        <td><?= $r['modelo'] ?></td>
+                        <td class="text-primary fw-bold"><?= $r['serie_matricula_1'] ?></td>
+                        <td><?= $r['status_tramite'] ?? '' ?></td>
+                        <td><?= $r['siniestro_detalle'] ?></td>
                         <td><?= number_format($r['importe_convenio'] ?? 0, 2) ?></td>
-                        <td><?= htmlspecialchars($r['tipo_pago'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['comprobante_pago'] ?? '') ?></td>
-                        <td class="fw-bold text-success"><?= htmlspecialchars($r['fecha_acuse'] ?? '') ?></td>
+                        <td><?= $r['tipo_pago'] ?? '' ?></td>
+                        <td><?= $r['comprobante_pago'] ?? '' ?></td>
+                        <td class="fw-bold text-success"><?= $r['fecha_acuse'] ?></td>
                         <td class="text-center <?= ($clase_status != 'bg-alerta-temprana') ? $clase_status : '' ?>">
                             <?= (!empty($r['fecha_acuse']) && $r['fecha_acuse'] != '0000-00-00') ? $dias . " D" : "PENDIENTE" ?>
                         </td>
-                        <td><?= htmlspecialchars($r['folio_sdra'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['of_recibido'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['no_oficio'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['bienes_diversos'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['candado_manos'] ?? '') ?></td>
-                        <td class="text-center"><?= htmlspecialchars($r['armas'] ?? '') ?></td>
-                        <td class="text-center"><?= htmlspecialchars($r['cargador'] ?? '') ?></td>
-                        <td class="text-center"><?= htmlspecialchars($r['cartuchos'] ?? '') ?></td>
-                        <td class="text-center"><?= htmlspecialchars($r['cascos'] ?? '') ?></td>
-                        <td class="text-center"><?= htmlspecialchars($r['escudos'] ?? '') ?></td>
-                        <td class="text-center"><?= htmlspecialchars($r['chalecos'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['atendio'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['digitalizado'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['observaciones_grales'] ?? '') ?></td>
+                        <td><?= $r['folio_sdra'] ?></td>
+                        <td><?= $r['of_recibido'] ?? '' ?></td>
+                        <td><?= $r['no_oficio'] ?? '' ?></td>
+                        <td><?= $r['bienes_diversos'] ?? '' ?></td>
+                        <td><?= $r['candado_manos'] ?? '' ?></td>
+                        <td class="text-center"><?= $r['armas'] ?></td>
+                        <td class="text-center"><?= $r['cargador'] ?></td>
+                        <td class="text-center"><?= $r['cartuchos'] ?></td>
+                        <td class="text-center"><?= $r['cascos'] ?? '' ?></td>
+                        <td class="text-center"><?= $r['escudos'] ?? '' ?></td>
+                        <td class="text-center"><?= $r['chalecos'] ?></td>
+                        <td><?= $r['atendio'] ?></td>
+                        <td><?= $r['digitalizado'] ?? '' ?></td>
+                        <td><?= $r['observaciones_grales'] ?? '' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>

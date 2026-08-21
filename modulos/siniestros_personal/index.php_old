@@ -60,7 +60,7 @@ try {
         .header-top { background: #1a1a1a; color: white; padding: 12px; }
         .table-container { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .table-responsive { overflow-x: auto; max-height: 70vh; }
-        .table { min-width: 2400px; }
+        .table { min-width: 2500px; }
         .table th { background: #212529 !important; color: white !important; text-align: center; vertical-align: middle; white-space: nowrap; position: sticky; top: 0; z-index: 10; }
         .table td { white-space: nowrap; vertical-align: middle; border: 1px solid #dee2e6; }
         .img-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; cursor: pointer; }
@@ -135,7 +135,9 @@ try {
                         <th>No. Empleado</th>
                         <th>Edad</th>
                         <th>RFC</th>
-                        <th>Nombre del Elemento</th>
+                        <th>Nombre(s)</th>
+                        <th>Apellido Paterno</th>
+                        <th>Apellido Materno</th>
                         <th>Fecha de Siniestro</th>
                         <th>Reporte</th>
                         <th>Póliza / Sección</th>
@@ -153,10 +155,32 @@ try {
                 </thead>
                 <tbody>
                     <?php if (count($resultados) > 0): ?>
-                        <?php foreach ($resultados as $row): ?>
+                        <?php foreach ($resultados as $row): 
+                            // Procesamiento inteligente para separar nombres y apellidos correctamente
+                            $db_nombre = trim($row['nombre'] ?? '');
+                            $db_pat    = trim($row['apellido_paterno'] ?? '');
+                            $db_mat    = trim($row['apellido_materno'] ?? '');
+
+                            $nombres_final = $db_nombre;
+                            $pat_final     = $db_pat;
+                            $mat_final     = $db_mat;
+
+                            if (empty($pat_final) && $db_nombre !== '') {
+                                $partes = preg_replace('/\s+/', ' ', $db_nombre);
+                                $arr = explode(' ', $partes);
+                                if (count($arr) >= 3) {
+                                    $mat_final = array_pop($arr); // Último elemento: Apellido Materno
+                                    $pat_final = array_pop($arr); // Penúltimo elemento: Apellido Paterno
+                                    $nombres_final = implode(' ', $arr); // Resto: Nombre(s)
+                                } elseif (count($arr) === 2) {
+                                    $pat_final = array_pop($arr); // Último elemento: Apellido Paterno
+                                    $nombres_final = implode(' ', $arr); // Primer elemento: Nombre(s)
+                                    $mat_final = '';
+                                }
+                            }
+                        ?>
                             <tr>
                                 <td class="text-center">
-                                    <!-- Botón Formato Oficial / PDF -->
                                     <a href="generar_formato_oficial.php?id=<?= $row['id'] ?>" class="btn btn-outline-danger btn-xs" target="_blank" title="Imprimir Formato Oficial">
                                         <i class="fas fa-file-pdf"></i>
                                     </a>
@@ -174,7 +198,9 @@ try {
                                 <td class="text-center"><?= htmlspecialchars($row['no_empleado']) ?></td>
                                 <td class="text-center"><?= htmlspecialchars($row['edad']) ?></td>
                                 <td><?= htmlspecialchars($row['rfc']) ?></td>
-                                <td><b><?= htmlspecialchars($row['nombre']) ?></b></td>
+                                <td><b><?= htmlspecialchars($nombres_final) ?></b></td>
+                                <td><b><?= htmlspecialchars($pat_final) ?></b></td>
+                                <td><b><?= htmlspecialchars($mat_final) ?></b></td>
                                 <td class="text-center"><?= htmlspecialchars($row['fecha_de_siniestro']) ?></td>
                                 <td class="text-center"><?= htmlspecialchars($row['reporte']) ?></td>
                                 <td><?= htmlspecialchars($row['poliza_seccion']) ?></td>
@@ -211,7 +237,7 @@ try {
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="22" class="text-center py-4 text-muted">No se encontraron registros de personal siniestrado.</td>
+                            <td colspan="24" class="text-center py-4 text-muted">No se encontraron registros de personal siniestrado.</td>
                         </tr>
                     <?php endif; ?>
                 </tbody>

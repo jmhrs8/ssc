@@ -1,4 +1,3 @@
-
 <?php
 require_once "../../config/conexion.php";
 
@@ -23,7 +22,7 @@ $registro = [
     'diagnostico' => '', 'quien_reporta' => '', 'quien_recibe' => '', 'fecha_ingreso_hospital' => '',
     'hora_ingreso_hospital' => '', 'cabina_nombre' => '', 'cabina_ap_paterno' => '', 'cabina_ap_materno' => '',
     'actividades_cabina' => '', 'conclusiones' => '', 'lesiones' => '', 'observaciones' => '',
-    'montos_erogados' => '', 'fotos' => []
+    'montos_erogados' => '', 'area_adscripcion' => '', 'fotos' => []
 ];
 
 if (!$id) {
@@ -34,7 +33,12 @@ if (!$id) {
 } else {
     $stmt = $pdo->prepare("SELECT * FROM siniestros_personal WHERE id = ?");
     $stmt->execute([$id]);
-    $registro = $stmt->fetch(PDO::FETCH_ASSOC);
+    $result_db = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($result_db) {
+        // Combinamos para asegurar que todas las llaves existan
+        $registro = array_merge($registro, $result_db);
+    }
 
     if (!empty($registro['foto'])) {
         $dec = json_decode($registro['foto'], true);
@@ -77,7 +81,6 @@ if (!$id) {
                 <input type="hidden" name="id" value="<?= $id ?>">
 
                 <div class="row g-3">
-                    <!-- CABECERA DEL FOLIO Y BUSCADOR DE ELEMENTO POR RFC -->
                     <div class="col-md-3">
                         <label class="form-label fw-bold">No. FOLIO</label>
                         <input type="text" name="no_folio" class="form-control" value="<?= htmlspecialchars($registro['no_folio']) ?>" readonly required>
@@ -102,7 +105,6 @@ if (!$id) {
                         <input type="number" id="edad" name="edad" class="form-control" value="<?= htmlspecialchars($registro['edad']) ?>">
                     </div>
 
-                    <!-- SECCIÓN 1: DATOS DEL ELEMENTO (OBTENIDOS DESDE EL PADRÓN POR RFC) -->
                     <div class="col-md-12">
                         <div class="section-header bg-secondary text-white"><i class="fas fa-id-badge me-1"></i> 1. DATOS DEL ELEMENTO (OBTENIDOS DEL PADRÓN POR RFC)</div>
                     </div>
@@ -120,7 +122,6 @@ if (!$id) {
                         <input type="text" id="apellido_materno" name="apellido_materno" class="form-control fw-bold" value="<?= htmlspecialchars($registro['apellido_materno'] ?? '') ?>">
                     </div>
 
-                    <!-- SECCIÓN 2: DETALLES DEL REPORTE Y SINIESTRO -->
                     <div class="col-md-12">
                         <div class="section-header"><i class="fas fa-car-crash me-1"></i> 2. DETALLES DEL REPORTE Y SINIESTRO</div>
                     </div>
@@ -151,10 +152,17 @@ if (!$id) {
                         <label class="form-label fw-bold">REPORTE (FOLIO CABINA)</label>
                         <input type="text" name="reporte" class="form-control" value="<?= htmlspecialchars($registro['reporte']) ?>">
                     </div>
+
                     <div class="col-md-3">
                         <label class="form-label fw-bold">PÓLIZA Y SECCIÓN QUE SE AFECTA</label>
-                        <input type="text" name="poliza_seccion" class="form-control" value="<?= htmlspecialchars($registro['poliza_seccion']) ?>">
+                        <select name="poliza_seccion" class="form-select">
+                            <option value="">-- SELECCIONE --</option>
+                            <option value="G.M.A." <?= $registro['poliza_seccion']=='G.M.A.'?'selected':'' ?>>G.M.A.</option>
+                            <option value="A.P." <?= $registro['poliza_seccion']=='A.P.'?'selected':'' ?>>A.P.</option>
+                            <option value="OTROS" <?= $registro['poliza_seccion']=='OTROS'?'selected':'' ?>>OTROS</option>
+                        </select>
                     </div>
+
                     <div class="col-md-3">
                         <label class="form-label fw-bold">ASEGURADORA QUE ATIENDE</label>
                         <input type="text" name="aseguradora" class="form-control" value="<?= htmlspecialchars($registro['aseguradora']) ?>">
@@ -162,27 +170,25 @@ if (!$id) {
 
                     <div class="col-md-3">
                         <label class="form-label fw-bold">CAUSA DEL SINIESTRO</label>
-                        <select name="causa_resumido" class="form-select">
-                            <option value="">-- SELECCIONE --</option>
-                            <option value="G.M.A." <?= (stristr($registro['causa_resumido'], 'GMA') !== false || stristr($registro['causa_resumido'], 'G.M.A.') !== false) ? 'selected' : '' ?>>G.M.A. (GASTOS MÉDICOS MAYORES)</option>
-                            <option value="A.P." <?= (stristr($registro['causa_resumido'], 'AP') !== false || stristr($registro['causa_resumido'], 'A.P.') !== false) ? 'selected' : '' ?>>A.P. (ACCIDENTES PERSONALES)</option>
-                            <option value="OTROS" <?= (stristr($registro['causa_resumido'], 'OTROS') !== false) ? 'selected' : '' ?>>OTROS</option>
-                        </select>
+                        <input type="text" name="causa_resumido" class="form-control" value="<?= htmlspecialchars($registro['causa_resumido'] ?? '') ?>" placeholder="ESCRIBA CAUSA...">
                     </div>
 
                     <div class="col-md-3">
                         <label class="form-label fw-bold">UNIDAD VEHICULAR</label>
                         <input type="text" name="unidad_vehicular" class="form-control" value="<?= htmlspecialchars($registro['unidad_vehicular']) ?>">
                     </div>
+
+                    <!-- CAMPO DE ÁREA DE ADSCRIPCIÓN CORREGIDO CON SU NOMBRE REAL DE LA BD -->
                     <div class="col-md-6">
                         <label class="form-label fw-bold">ÁREA DE ADSCRIPCIÓN</label>
                         <input type="text" id="area_adscripcion" name="area_adscripcion" class="form-control" value="<?= htmlspecialchars($registro['area_adscripcion'] ?? '') ?>">
                     </div>
 
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <label class="form-label fw-bold">HOSPITAL</label>
                         <input type="text" name="hospital" class="form-control" value="<?= htmlspecialchars($registro['hospital']) ?>">
                     </div>
+
                     <div class="col-md-4">
                         <label class="form-label fw-bold">¿REQUIRIÓ HOSPITALIZACIÓN?</label>
                         <select name="requirio_hospitalizacion" class="form-select">
@@ -205,7 +211,6 @@ if (!$id) {
                         <textarea name="observaciones" class="form-control" rows="2"><?= htmlspecialchars($registro['observaciones']) ?></textarea>
                     </div>
 
-                    <!-- SECCIÓN 3: COMPLEMENTO Y DATOS ESPECÍFICOS DEL LESIONADO -->
                     <div class="col-md-12">
                         <div class="section-header"><i class="fas fa-file-alt me-1"></i> 3. COMPLEMENTO, FORMATO OFICIAL Y DATOS DEL LESIONADO</div>
                     </div>
@@ -290,7 +295,6 @@ if (!$id) {
                         <textarea name="conclusiones" class="form-control" rows="3"><?= htmlspecialchars($registro['conclusiones'] ?? '') ?></textarea>
                     </div>
 
-                    <!-- FOTOGRAFÍAS -->
                     <div class="col-md-12 mt-3">
                         <label class="form-label fw-bold text-danger"><i class="fas fa-camera me-1"></i> FOTOGRAFÍAS DE EVIDENCIA / LESIONES</label>
                         <input type="file" id="input_fotos" name="fotos[]" class="form-control mb-2" multiple accept="image/*">
@@ -376,7 +380,6 @@ $('#btn_verificar').click(function(e) {
                 let apMaterno = (response.apellido_materno || '').trim();
                 let soloNombre = nombreCompletoDB;
 
-                // Separar automáticamente si vienen unidos en la base principal
                 if (apPaterno === '' && nombreCompletoDB !== '') {
                     let partes = nombreCompletoDB.replace(/\s+/g, ' ').split(' ');
                     if (partes.length >= 3) {
@@ -389,11 +392,9 @@ $('#btn_verificar').click(function(e) {
                     }
                 }
 
-                // Asignar a los campos correspondientes del ELEMENTO
                 $('#nombre').val(soloNombre.toUpperCase());
                 $('#apellido_paterno').val(apPaterno.toUpperCase());
                 $('#apellido_materno').val(apMaterno.toUpperCase());
-
                 $('#no_empleado').val((response.no_empleado || '').toUpperCase());
                 $('#area_adscripcion').val((response.area_adscripcion || '').toUpperCase());
 
