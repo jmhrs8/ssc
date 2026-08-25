@@ -90,11 +90,11 @@ if ($id) {
                                 <textarea name="descripcion_via_publica" class="form-control" rows="2"><?= $datos['descripcion_via_publica'] ?? '' ?></textarea>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label>FECHA DE ALTA</label>
+                                <label>FECHA DE ALTA EN ASEGURADORA</label>
                                 <input type="date" name="fecha_alta" class="form-control" value="<?= $datos['fecha_alta'] ?? '' ?>">
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label>QUINCENA</label>
+                                <label>QUINCENA DE ALTA EN LA ASEGURADORA</label>
                                 <input type="text" name="quincena" class="form-control" placeholder="EJ. 2026-08" value="<?= $datos['quincena'] ?? '' ?>">
                             </div>
                         </div>
