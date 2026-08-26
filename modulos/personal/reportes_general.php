@@ -130,8 +130,8 @@ try {
     <!-- Cabecera Gerencial -->
     <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm no-print">
         <div>
-            <h4 class="mb-0 fw-bold text-dark"><i class="fas fa-chart-line text-primary"></i> PANEL GERENCIAL Y ESTADÍSTICAS</h4>
-            <small class="text-muted">CONTROL GENERAL DE PERSONAL, DISTRIBUCIÓN Y BITÁCORA DE AUDITORÍA</small>
+            <h4 class="mb-0 fw-bold text-dark"><i class="fas fa-chart-line text-primary"></i> PANEL GERENCIAL Y ESTADÍSTICAS DE PERSONAL ASEGURADO</h4>
+            <small class="text-muted">CONTROL GENERAL DE PERSONAL ASEGURADO, DISTRIBUCIÓN Y BITÁCORA DE PERSONAL REGISTRADO</small>
         </div>
         <div class="d-flex gap-2">
             <button onclick="window.print()" class="btn btn-primary btn-sm px-3"><i class="fas fa-print"></i> IMPRIMIR / PDF</button>
