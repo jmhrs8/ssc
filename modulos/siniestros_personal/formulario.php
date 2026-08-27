@@ -149,7 +149,7 @@ if (!$id) {
                         <input type="date" name="fecha_de_siniestro" class="form-control" value="<?= htmlspecialchars($registro['fecha_de_siniestro']) ?>">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label fw-bold">REPORTE (FOLIO CABINA)</label>
+                        <label class="form-label fw-bold">REPORTE (FOLIO SINIESTRO CABINA/VEHICULO)</label>
                         <input type="text" name="reporte" class="form-control" value="<?= htmlspecialchars($registro['reporte']) ?>">
                     </div>
 
@@ -409,7 +409,7 @@ $('#btn_verificar').click(function(e) {
                     if(edadAprox > 15 && edadAprox < 90) { $('#edad').val(edadAprox); }
                 }
 
-                $('#estado_asegurado').html('<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> VERIFICADO: ELEMENTO ENCONTRADO EN PADRÓN.</span>');
+                $('#estado_asegurado').html('<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> VERIFICADO: ELEMENTO ENCONTRADO EN PADRÓN DE ASEGURADOS.</span>');
             } else {
                 let continuar = confirm('⚠️ EL RFC INGRESADO NO FUE ENCONTRADO EN LA BASE GENERAL DE ASEGURADOS.\n\n¿Desea continuar el usuario al parecer no esta asegurado?');
                 if(!continuar) {
