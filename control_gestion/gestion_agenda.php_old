@@ -1,0 +1,393 @@
+<?php
+session_start();
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// Validar Sesión
+if (!isset($_SESSION['usuario']) && !isset($_SESSION['id_usuario'])) {
+    if (isset($_REQUEST['accion'])) {
+        header('Content-Type: application/json; charset=utf8mb4');
+        echo json_encode(['status' => 'error', 'mensaje' => 'Sesión no válida'], JSON_UNESCAPED_UNICODE);
+        exit;
+    } else {
+        header("Location: login.php");
+        exit;
+    }
+}
+
+$id_usuario_actual = $_SESSION['id_usuario'] ?? $_SESSION['id'] ?? 1;
+
+$host = '127.0.0.1';
+$db   = 'ssc_control_gestion';
+$user = 'root';
+$pass = 'jmhl2474';
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass, [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+    ]);
+} catch (PDOException $e) {
+    if (isset($_REQUEST['accion'])) {
+        header('Content-Type: application/json; charset=utf8mb4');
+        echo json_encode(['status' => 'error', 'mensaje' => 'Error de conexión: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        exit;
+    } else {
+        die('Error de conexión a la base de datos: ' . $e->getMessage());
+    }
+}
+
+// ==========================================
+// 1. MANEJO DE PETICIONES AJAX / BACKEND
+// ==========================================
+if (isset($_REQUEST['accion'])) {
+    header('Content-Type: application/json; charset=utf8mb4');
+    $accion = $_REQUEST['accion'];
+
+    switch ($accion) {
+        case 'listar':
+            try {
+                $sql = "SELECT a.id_cita, a.titulo, a.id_usuario_asignado, u.nombre_completo AS asignado_a, 
+                               a.fecha_cita, a.hora_inicio, a.hora_fin, a.motivo, a.lugar, a.estatus, 
+                               a.creado_por, a.creado_en,
+                               CONCAT(a.fecha_cita, 'T', a.hora_inicio) AS start,
+                               CONCAT(a.fecha_cita, 'T', a.hora_fin) AS end
+                        FROM ssc_agenda_gerencial a
+                        LEFT JOIN usuarios u ON a.id_usuario_asignado = u.id_usuario
+                        ORDER BY a.fecha_cita DESC, a.hora_inicio ASC";
+                
+                $stmt = $pdo->query($sql);
+                $eventos = $stmt->fetchAll();
+                
+                echo json_encode(['status' => 'success', 'data' => $eventos], JSON_UNESCAPED_UNICODE);
+            } catch (PDOException $e) {
+                echo json_encode(['status' => 'error', 'mensaje' => 'Error al consultar la agenda: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            }
+            break;
+
+        case 'listar_usuarios':
+            try {
+                $stmt = $pdo->query("SELECT id_usuario, nombre_completo, username, email FROM usuarios WHERE activo = 1 ORDER BY nombre_completo ASC");
+                $usuarios = $stmt->fetchAll();
+                echo json_encode(['status' => 'success', 'data' => $usuarios], JSON_UNESCAPED_UNICODE);
+            } catch (PDOException $e) {
+                echo json_encode(['status' => 'error', 'mensaje' => 'Error al obtener usuarios: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            }
+            break;
+
+        case 'guardar':
+            $titulo              = $_POST['titulo'] ?? '';
+            $id_usuario_asignado = $_POST['id_usuario_asignado'] ?? $id_usuario_actual;
+            $fecha_cita          = $_POST['fecha_cita'] ?? '';
+            $hora_inicio         = $_POST['hora_inicio'] ?? '';
+            $hora_fin            = $_POST['hora_fin'] ?? '';
+            $motivo              = $_POST['motivo'] ?? '';
+            $lugar               = $_POST['lugar'] ?? 'Oficina de Dirección';
+            $estatus             = $_POST['estatus'] ?? 'Programada';
+
+            if (empty($titulo) || empty($id_usuario_asignado) || empty($fecha_cita) || empty($hora_inicio) || empty($hora_fin) || empty($motivo)) {
+                echo json_encode(['status' => 'error', 'mensaje' => 'Todos los campos obligatorios deben ser llenados'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            try {
+                // 1. Guardar en Base de Datos
+                $sql = "INSERT INTO ssc_agenda_gerencial 
+                        (titulo, id_usuario_asignado, fecha_cita, hora_inicio, hora_fin, motivo, lugar, estatus, creado_por) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([
+                    $titulo, 
+                    $id_usuario_asignado, 
+                    $fecha_cita, 
+                    $hora_inicio, 
+                    $hora_fin, 
+                    $motivo, 
+                    $lugar, 
+                    $estatus, 
+                    $id_usuario_actual
+                ]);
+
+                // 2. Obtener los datos del usuario para el envío del correo
+                $stmtUser = $pdo->prepare("SELECT nombre_completo, email FROM usuarios WHERE id_usuario = ?");
+                $stmtUser->execute([$id_usuario_asignado]);
+                $usuarioDestino = $stmtUser->fetch();
+
+                $correo_enviado = false;
+                if ($usuarioDestino && !empty($usuarioDestino['email'])) {
+                    $to = $usuarioDestino['email'];
+                    $subject = "Nueva Cita Agendada: " . $titulo;
+                    
+                    $message = "
+                    <html>
+                    <head>
+                      <title>Notificación de Cita Agendada</title>
+                    </head>
+                    <body style='font-family: Arial, sans-serif; color: #333;'>
+                      <h2>Hola, {$usuarioDestino['nombre_completo']}</h2>
+                      <p>Se ha agendado una nueva cita en la Agenda Gerencial de La Sub Dir de Aseguramiento de la SSC:</p>
+                      <table style='border-collapse: collapse; width: 100%; max-width: 600px;'>
+                        <tr><td style='padding: 8px; border: 1px solid #ddd;'><b>Título:</b></td><td style='padding: 8px; border: 1px solid #ddd;'>{$titulo}</td></tr>
+                        <tr><td style='padding: 8px; border: 1px solid #ddd;'><b>Fecha:</b></td><td style='padding: 8px; border: 1px solid #ddd;'>{$fecha_cita}</td></tr>
+                        <tr><td style='padding: 8px; border: 1px solid #ddd;'><b>Horario:</b></td><td style='padding: 8px; border: 1px solid #ddd;'>{$hora_inicio} a {$hora_fin} hrs</td></tr>
+                        <tr><td style='padding: 8px; border: 1px solid #ddd;'><b>Lugar:</b></td><td style='padding: 8px; border: 1px solid #ddd;'>{$lugar}</td></tr>
+                        <tr><td style='padding: 8px; border: 1px solid #ddd;'><b>Motivo:</b></td><td style='padding: 8px; border: 1px solid #ddd;'>{$motivo}</td></tr>
+                      </table>
+                      <br>
+                      <p><small>Este es un correo automático enviado por el sistema de Control de Gestión.</small></p>
+                    </body>
+                    </html>
+                    ";
+
+                    $headers  = "MIME-Version: 1.0" . "\r\n";
+                    $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+                    $headers .= "From: Control de Gestión <no-reply@10.13.14.16>" . "\r\n";
+
+                    $correo_enviado = @mail($to, $subject, $message, $headers);
+                }
+                
+                $msg = 'Cita agendada correctamente';
+                if ($correo_enviado) {
+                    $msg .= ' y notificación enviada por correo.';
+                } else if ($usuarioDestino && empty($usuarioDestino['email'])) {
+                    $msg .= ' (El usuario asignado no tiene correo registrado).';
+                }
+
+                echo json_encode(['status' => 'success', 'mensaje' => $msg], JSON_UNESCAPED_UNICODE);
+            } catch (PDOException $e) {
+                echo json_encode(['status' => 'error', 'mensaje' => 'Error al guardar la cita: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            }
+            break;
+
+        case 'eliminar':
+            $id_cita = $_POST['id_cita'] ?? 0;
+            try {
+                $stmt = $pdo->prepare("DELETE FROM ssc_agenda_gerencial WHERE id_cita = ?");
+                $stmt->execute([$id_cita]);
+                
+                echo json_encode(['status' => 'success', 'mensaje' => 'Cita eliminada correctamente'], JSON_UNESCAPED_UNICODE);
+            } catch (PDOException $e) {
+                echo json_encode(['status' => 'error', 'mensaje' => 'Error al eliminar la cita: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            }
+            break;
+
+        default:
+            echo json_encode(['status' => 'error', 'mensaje' => 'Acción no válida'], JSON_UNESCAPED_UNICODE);
+            break;
+    }
+    exit;
+}
+
+// ==========================================
+// 2. VISTA HTML (Interfaz de Usuario)
+// ==========================================
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agenda Gerencial</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container my-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="fa-solid fa-calendar-days text-primary me-2"></i>Agenda Gerencial</h2>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalEvento">
+            <i class="fa-solid fa-plus me-1"></i>Nueva Cita
+        </button>
+    </div>
+
+    <div class="card shadow-sm p-3 bg-white rounded">
+        <div id="calendar"></div>
+    </div>
+</div>
+
+<!-- Modal para Registrar Cita -->
+<div class="modal fade" id="modalEvento" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Registrar Nueva Cita</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="formEvento">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label font-weight-bold">Título de la Cita</label>
+                        <input type="text" name="titulo" class="form-control" placeholder="Ej. Reunión Operativa" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label font-weight-bold">Asignar Cita a Usuario</label>
+                        <select name="id_usuario_asignado" id="selectUsuarios" class="form-select" required>
+                            <option value="">Cargando usuarios...</option>
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Fecha</label>
+                            <input type="date" name="fecha_cita" class="form-control" required>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Hora Inicio</label>
+                            <input type="time" name="hora_inicio" class="form-control" required>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Hora Fin</label>
+                            <input type="time" name="hora_fin" class="form-control" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Motivo</label>
+                        <textarea name="motivo" class="form-control" rows="2" placeholder="Detalles de la reunión..." required></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Lugar</label>
+                        <input type="text" name="lugar" class="form-control" value="Oficina de Dirección">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Cita</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const calendarEl = document.getElementById('calendar');
+    const selectUsuarios = document.getElementById('selectUsuarios');
+
+    function cargarUsuarios() {
+        fetch('gestion_agenda.php?accion=listar_usuarios')
+            .then(res => res.json())
+            .then(data => {
+                selectUsuarios.innerHTML = '<option value="">-- Selecciona un usuario --</option>';
+                if (data.status === 'success') {
+                    data.data.forEach(user => {
+                        const option = document.createElement('option');
+                        option.value = user.id_usuario;
+                        option.textContent = `${user.nombre_completo} (${user.username})`;
+                        selectUsuarios.appendChild(option);
+                    });
+                } else {
+                    selectUsuarios.innerHTML = '<option value="">Error al cargar usuarios</option>';
+                }
+            })
+            .catch(() => {
+                selectUsuarios.innerHTML = '<option value="">Error de conexión</option>';
+            });
+    }
+
+    cargarUsuarios();
+
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'es',
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,listWeek'
+        },
+        events: function(fetchInfo, successCallback, failureCallback) {
+            fetch('gestion_agenda.php?accion=listar')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        const eventos = data.data.map(item => ({
+                            id: item.id_cita,
+                            title: item.titulo,
+                            start: item.start,
+                            end: item.end,
+                            extendedProps: {
+                                asignado_a: item.asignado_a || 'Sin Asignar',
+                                motivo: item.motivo,
+                                lugar: item.lugar,
+                                estatus: item.estatus
+                            }
+                        }));
+                        successCallback(eventos);
+                    } else {
+                        Swal.fire('Error', data.mensaje, 'error');
+                    }
+                })
+                .catch(err => failureCallback(err));
+        },
+        eventClick: function(info) {
+            const props = info.event.extendedProps;
+            Swal.fire({
+                title: info.event.title,
+                html: `<p><b>Asignado a:</b> ${props.asignado_a}</p>
+                       <p><b>Motivo:</b> ${props.motivo}</p>
+                       <p><b>Lugar:</b> ${props.lugar}</p>
+                       <p><b>Estatus:</b> <span class="badge bg-info">${props.estatus}</span></p>`,
+                showCancelButton: true,
+                confirmButtonText: 'Eliminar Cita',
+                confirmButtonColor: '#d33',
+                cancelButtonText: 'Cerrar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const formData = new FormData();
+                    formData.append('id_cita', info.event.id);
+
+                    fetch('gestion_agenda.php?accion=eliminar', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            Swal.fire('Eliminado', data.mensaje, 'success');
+                            calendar.refetchEvents();
+                        } else {
+                            Swal.fire('Error', data.mensaje, 'error');
+                        }
+                    });
+                }
+            });
+        }
+    });
+
+    calendar.render();
+
+    document.getElementById('formEvento').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+
+        fetch('gestion_agenda.php?accion=guardar', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire('Guardado', data.mensaje, 'success');
+                bootstrap.Modal.getInstance(document.getElementById('modalEvento')).hide();
+                this.reset();
+                calendar.refetchEvents();
+            } else {
+                Swal.fire('Error', data.mensaje, 'error');
+            }
+        });
+    });
+});
+</script>
+</body>
+</html>

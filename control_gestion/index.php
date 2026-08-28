@@ -16,7 +16,7 @@ try {
 
     $cat_areas = $pdo->query("SELECT id_area, nombre_area FROM catalogo_areas ORDER BY nombre_area ASC")->fetchAll(PDO::FETCH_ASSOC);
     $usuarios  = $pdo->query("SELECT id_usuario, nombre_completo FROM usuarios ORDER BY nombre_completo ASC")->fetchAll(PDO::FETCH_ASSOC);
-    
+
     // Extraer los roles definidos en el ENUM de la tabla usuarios de forma dinámica
     $roles_query = $pdo->query("SHOW COLUMNS FROM usuarios LIKE 'rol'")->fetch(PDO::FETCH_ASSOC);
     preg_match("/^enum\((.*)\)$/", $roles_query['Type'], $matches);
@@ -80,7 +80,7 @@ try {
         <span class="navbar-brand text-white fw-bold fs-6"><i class="fa-solid fa-shield-halved me-2"></i>SSC | Control de Gestión</span>
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-dark px-2 py-1.5 fs-7"><i class="fa-solid fa-user me-1 text-warning"></i><?php echo htmlspecialchars($usuario_activo); ?> (<?php echo htmlspecialchars($rol_activo); ?>)</span>
-            
+
             <!-- SOLO VISIBLE SI ES ADMIN -->
             <?php if ($rol_activo === 'ADMIN'): ?>
                 <button class="btn btn-outline-light btn-sm px-2 py-0.5" style="font-size:0.8rem;" onclick="abrirModalImportar()"><i class="fa-solid fa-file-excel me-1"></i>Importar</button>
@@ -91,6 +91,10 @@ try {
                 <i class="fa-solid fa-file-export me-1"></i>Exportar Respaldo
             </a>
 
+            <!-- BOTÓN DE AGENDA GERENCIAL -->
+            <button class="btn btn-outline-light btn-sm px-2 py-0.5" style="font-size:0.8rem;" onclick="window.open('gestion_agenda.php', '_blank')"><i class="fa-solid fa-calendar-days me-1"></i>Agenda</button>
+
+            <!-- BOTÓN DE REPORTE DE FOLIOS -->
             <button class="btn btn-outline-light btn-sm px-2 py-0.5" style="font-size:0.8rem;" onclick="window.open('reporte_folios.php', '_blank')"><i class="fa-solid fa-file-pdf me-1"></i>Reporte</button>
 
             <!-- GESTIÓN DE PERSONAL SOLO PARA ADMIN -->
@@ -296,14 +300,14 @@ try {
                 <input type="text" name="username" id="edit_username" class="form-control mb-2" placeholder="Usuario" required>
                 <input type="text" name="correo" id="edit_correo" class="form-control mb-2" placeholder="Correo" required>
                 <input type="password" name="password" id="edit_password" class="form-control mb-2" placeholder="Nueva contraseña (opcional)">
-                
+
                 <label class="form-label fw-bold">Rol:</label>
                 <select name="rol" id="edit_rol" class="form-select mb-2" required>
                     <?php foreach($cat_roles as $rol_item): ?>
                         <option value="<?php echo htmlspecialchars($rol_item); ?>"><?php echo htmlspecialchars($rol_item); ?></option>
                     <?php endforeach; ?>
                 </select>
-                
+
                 <label class="form-label">Foto de perfil:</label>
                 <input type="file" name="foto_perfil" class="form-control">
             </div>
