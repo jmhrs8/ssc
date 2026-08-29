@@ -48,17 +48,35 @@ if (isset($_REQUEST['accion'])) {
     switch ($accion) {
         case 'listar':
             try {
-                $sql = "SELECT a.id_cita, a.titulo, a.id_usuario_asignado, u.nombre_completo AS asignado_a,
+                $sql = "SELECT a.id_cita, a.titulo, a.id_usuario_asignado,
                                a.fecha_cita, a.hora_inicio, a.hora_fin, a.motivo, a.lugar, a.estatus,
                                a.creado_por, a.creado_en,
                                CONCAT(a.fecha_cita, 'T', a.hora_inicio) AS start,
                                CONCAT(a.fecha_cita, 'T', a.hora_fin) AS end
                         FROM ssc_agenda_gerencial a
-                        LEFT JOIN usuarios u ON a.id_usuario_asignado = u.id_usuario
                         ORDER BY a.fecha_cita DESC, a.hora_inicio ASC";
 
                 $stmt = $pdo->query($sql);
                 $eventos = $stmt->fetchAll();
+
+                // Catálogo de usuarios para mapear nombres en los eventos
+                $stmtUsers = $pdo->query("SELECT id_usuario, nombre_completo FROM usuarios");
+                $mapUsuarios = [];
+                while ($u = $stmtUsers->fetch()) {
+                    $mapUsuarios[$u['id_usuario']] = $u['nombre_completo'];
+                }
+
+                // Concatenar los nombres de los asignados
+                foreach ($eventos as &$evt) {
+                    $ids = array_filter(explode(',', $evt['id_usuario_asignado']));
+                    $nombres = [];
+                    foreach ($ids as $id) {
+                        if (isset($mapUsuarios[$id])) {
+                            $nombres[] = $mapUsuarios[$id];
+                        }
+                    }
+                    $evt['asignado_a'] = !empty($nombres) ? implode(', ', $nombres) : 'Sin asignar';
+                }
 
                 echo json_encode(['status' => 'success', 'data' => $eventos], JSON_UNESCAPED_UNICODE);
             } catch (PDOException $e) {
@@ -68,7 +86,6 @@ if (isset($_REQUEST['accion'])) {
 
         case 'listar_usuarios':
             try {
-                // Se selecciona la columna 'correo' que contiene las direcciones reales
                 $stmt = $pdo->query("SELECT id_usuario, nombre_completo, username, correo FROM usuarios WHERE activo = 1 ORDER BY nombre_completo ASC");
                 $usuarios = $stmt->fetchAll();
                 echo json_encode(['status' => 'success', 'data' => $usuarios], JSON_UNESCAPED_UNICODE);
@@ -78,26 +95,28 @@ if (isset($_REQUEST['accion'])) {
             break;
 
         case 'guardar':
-            $id_cita             = $_POST['id_cita'] ?? 0;
-            $titulo              = $_POST['titulo'] ?? '';
-            $id_usuario_asignado = $_POST['id_usuario_asignado'] ?? $id_usuario_actual;
-            $fecha_cita          = $_POST['fecha_cita'] ?? '';
-            $hora_inicio         = $_POST['hora_inicio'] ?? '';
-            $hora_fin            = $_POST['hora_fin'] ?? '';
-            $motivo              = $_POST['motivo'] ?? '';
-            $lugar               = $_POST['lugar'] ?? 'Oficina de Dirección';
+            $id_cita              = $_POST['id_cita'] ?? 0;
+            $titulo               = $_POST['titulo'] ?? '';
+            $usuarios_seleccionados = $_POST['id_usuario_asignado'] ?? []; // Array desde los checkboxes
+            $fecha_cita           = $_POST['fecha_cita'] ?? '';
+            $hora_inicio          = $_POST['hora_inicio'] ?? '';
+            $hora_fin             = $_POST['hora_fin'] ?? '';
+            $motivo               = $_POST['motivo'] ?? '';
+            $lugar                = $_POST['lugar'] ?? 'Oficina de Dirección';
             
             $estatus_raw = trim($_POST['estatus'] ?? 'PENDIENTE');
             $estatus     = substr($estatus_raw, 0, 10);
 
-            if (empty($titulo) || empty($id_usuario_asignado) || empty($fecha_cita) || empty($hora_inicio) || empty($hora_fin) || empty($motivo)) {
-                echo json_encode(['status' => 'error', 'mensaje' => 'Todos los campos obligatorios deben ser llenados'], JSON_UNESCAPED_UNICODE);
+            if (empty($titulo) || empty($usuarios_seleccionados) || empty($fecha_cita) || empty($hora_inicio) || empty($hora_fin) || empty($motivo)) {
+                echo json_encode(['status' => 'error', 'mensaje' => 'Debe ingresar el título, seleccionar al menos a un participante y llenar la información obligatoria.'], JSON_UNESCAPED_UNICODE);
                 exit;
             }
 
+            // Convertir array de IDs a cadena separada por comas (ej. "6,15,18")
+            $id_usuario_asignado_str = is_array($usuarios_seleccionados) ? implode(',', $usuarios_seleccionados) : $usuarios_seleccionados;
+
             try {
                 $pdo->exec("SET SESSION sql_mode=''");
-
                 $es_edicion = false;
 
                 if ($id_cita > 0) {
@@ -106,70 +125,73 @@ if (isset($_REQUEST['accion'])) {
                             SET titulo = ?, id_usuario_asignado = ?, fecha_cita = ?, hora_inicio = ?, hora_fin = ?, motivo = ?, lugar = ?, estatus = ?
                             WHERE id_cita = ?";
                     $stmt = $pdo->prepare($sql);
-                    $stmt->execute([$titulo, $id_usuario_asignado, $fecha_cita, $hora_inicio, $hora_fin, $motivo, $lugar, $estatus, $id_cita]);
+                    $stmt->execute([$titulo, $id_usuario_asignado_str, $fecha_cita, $hora_inicio, $hora_fin, $motivo, $lugar, $estatus, $id_cita]);
                     $id_cita_final = $id_cita;
                 } else {
                     $sql = "INSERT INTO ssc_agenda_gerencial
                             (titulo, id_usuario_asignado, fecha_cita, hora_inicio, hora_fin, motivo, lugar, estatus, creado_por)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
                     $stmt = $pdo->prepare($sql);
-                    $stmt->execute([$titulo, $id_usuario_asignado, $fecha_cita, $hora_inicio, $hora_fin, $motivo, $lugar, $estatus, $id_usuario_actual]);
+                    $stmt->execute([$titulo, $id_usuario_asignado_str, $fecha_cita, $hora_inicio, $hora_fin, $motivo, $lugar, $estatus, $id_usuario_actual]);
                     $id_cita_final = $pdo->lastInsertId();
                 }
 
                 // =======================================================
-                // CONSULTA Y ENVÍO DE CORREO USANDO LA COLUMNA 'CORREO'
+                // ENVÍO DE CORREO A PARTICIPANTES MARCADOS
                 // =======================================================
-                $stmtUser = $pdo->prepare("SELECT nombre_completo, correo FROM usuarios WHERE id_usuario = ?");
-                $stmtUser->execute([$id_usuario_asignado]);
-                $usuarioDestino = $stmtUser->fetch();
+                $idsArray = is_array($usuarios_seleccionados) ? $usuarios_seleccionados : explode(',', $usuarios_seleccionados);
+                $inQuery  = implode(',', array_fill(0, count($idsArray), '?'));
 
-                $correo_enviado = false;
-                $detalle_correo = "";
+                $stmtUsers = $pdo->prepare("SELECT nombre_completo, correo FROM usuarios WHERE id_usuario IN ($inQuery) AND correo IS NOT NULL AND correo != ''");
+                $stmtUsers->execute($idsArray);
+                $destinatarios = $stmtUsers->fetchAll();
 
-                if ($usuarioDestino && !empty($usuarioDestino['correo'])) {
-                    $to = trim($usuarioDestino['correo']);
-                    
+                $correos_enviados = 0;
+                $lista_notificados = [];
+
+                if (!empty($destinatarios)) {
                     $cita_formateada = str_pad($id_cita_final, 5, "0", STR_PAD_LEFT);
                     $accion_texto    = $es_edicion ? "Actualización de Cita" : "Nueva Cita Agendada";
                     $asunto_texto    = "=[SSC GESTIÓN]= " . $accion_texto . " - Cita #" . $cita_formateada;
-                    
-                    $asunto_mail = "=?UTF-8?B?" . base64_encode($asunto_texto) . "?=";
-
-                    $mensaje = "
-                    <html>
-                    <head><title>Agenda Gerencial</title></head>
-                    <body style='font-family: sans-serif; color: #333;'>
-                        <h2 style='color: #861532;'>SSC - Control de Gestión</h2>
-                        <p>Estimado(a) <strong>" . htmlspecialchars($usuarioDestino['nombre_completo']) . "</strong>,</p>
-                        <p>Se notifica que se ha " . ($es_edicion ? "actualizado" : "registrado") . " una cita asignada a su perfil:</p>
-                        <ul>
-                            <li><strong>ID Cita:</strong> #{$cita_formateada}</li>
-                            <li><strong>Asunto / Título:</strong> " . htmlspecialchars($titulo) . "</li>
-                            <li><strong>Fecha:</strong> " . htmlspecialchars($fecha_cita) . "</li>
-                            <li><strong>Horario:</strong> " . htmlspecialchars($hora_inicio) . " a " . htmlspecialchars($hora_fin) . " hrs</li>
-                            <li><strong>Lugar:</strong> " . htmlspecialchars($lugar) . "</li>
-                            <li><strong>Estatus:</strong> " . htmlspecialchars($estatus_raw) . "</li>
-                            <li><strong>Motivo:</strong> " . nl2br(htmlspecialchars($motivo)) . "</li>
-                        </ul>
-                        <hr>
-                        <small>Aviso automático enviado desde el Sistema de Control de Gestión.</small>
-                    </body>
-                    </html>";
+                    $asunto_mail     = "=?UTF-8?B?" . base64_encode($asunto_texto) . "?=";
 
                     $headers  = "MIME-Version: 1.0\r\n";
                     $headers .= "Content-type:text/html;charset=UTF-8\r\n";
                     $headers .= "From: Sistema Control de Gestión <sraaseguramiento@gmail.com>\r\n";
 
-                    $correo_enviado = mail($to, $asunto_mail, $mensaje, $headers);
+                    foreach ($destinatarios as $userDest) {
+                        $to = trim($userDest['correo']);
+                        
+                        $mensaje = "
+                        <html>
+                        <head><title>Agenda Gerencial</title></head>
+                        <body style='font-family: sans-serif; color: #333;'>
+                            <h2 style='color: #861532;'>SSC - Control de Gestión</h2>
+                            <p>Estimado(a) <strong>" . htmlspecialchars($userDest['nombre_completo']) . "</strong>,</p>
+                            <p>Se notifica que se le ha asignado la siguiente cita de trabajo:</p>
+                            <ul>
+                                <li><strong>ID Cita:</strong> #{$cita_formateada}</li>
+                                <li><strong>Asunto / Título:</strong> " . htmlspecialchars($titulo) . "</li>
+                                <li><strong>Fecha:</strong> " . htmlspecialchars($fecha_cita) . "</li>
+                                <li><strong>Horario:</strong> " . htmlspecialchars($hora_inicio) . " a " . htmlspecialchars($hora_fin) . " hrs</li>
+                                <li><strong>Lugar:</strong> " . htmlspecialchars($lugar) . "</li>
+                                <li><strong>Estatus:</strong> " . htmlspecialchars($estatus_raw) . "</li>
+                                <li><strong>Motivo:</strong> " . nl2br(htmlspecialchars($motivo)) . "</li>
+                            </ul>
+                            <hr>
+                            <small>Aviso automático enviado desde el Sistema de Control de Gestión.</small>
+                        </body>
+                        </html>";
 
-                    if ($correo_enviado) {
-                        $detalle_correo = "y notificación enviada a " . $to;
-                    } else {
-                        $detalle_correo = "(Fallo de entrega en el servicio mail local)";
+                        if (mail($to, $asunto_mail, $mensaje, $headers)) {
+                            $correos_enviados++;
+                            $lista_notificados[] = $to;
+                        }
                     }
+
+                    $detalle_correo = "y notificaciones enviadas a ($correos_enviados): " . implode(', ', $lista_notificados);
                 } else {
-                    $detalle_correo = "(El usuario asignado no tiene correo registrado en la BD)";
+                    $detalle_correo = "(Los usuarios seleccionados no tienen correo registrado)";
                 }
 
                 $msg = "Cita guardada correctamente " . $detalle_correo;
@@ -216,6 +238,7 @@ if (isset($_REQUEST['accion'])) {
         .fc-button-primary { background-color: #861532 !important; border-color: #861532 !important; }
         .fc-button-primary:hover { background-color: #631024 !important; border-color: #631024 !important; }
         .bg-ssc { background-color: #861532; color: #fff; }
+        .usuario-item:hover { background-color: #f1f3f5; border-radius: 4px; }
     </style>
 </head>
 <body class="bg-light">
@@ -249,11 +272,21 @@ if (isset($_REQUEST['accion'])) {
                         <input type="text" name="titulo" id="titulo" class="form-control" placeholder="Ej. Reunión de seguimiento de folios" required>
                     </div>
 
+                    <!-- SECCIÓN DE SELECCIÓN CON CHECKBOXES CORREGIDA -->
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Asignar Cita a Usuario</label>
-                        <select name="id_usuario_asignado" id="selectUsuarios" class="form-select" required>
-                            <option value="">Cargando usuarios...</option>
-                        </select>
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-bold mb-0">Participantes Asignados</label>
+                            <div>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none me-2" onclick="marcarTodos(true)">Marcar todos</button>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" onclick="marcarTodos(false)">Desmarcar</button>
+                            </div>
+                        </div>
+
+                        <input type="text" id="buscarUsuario" class="form-control form-control-sm mb-2" placeholder="🔍 Buscar participante por nombre...">
+
+                        <div class="border rounded p-2 bg-white" id="contenedorUsuarios" style="max-height: 220px; overflow-y: auto; position: relative;">
+                            <div class="text-muted small">Cargando lista de usuarios...</div>
+                        </div>
                     </div>
 
                     <div class="row">
@@ -293,7 +326,7 @@ if (isset($_REQUEST['accion'])) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-danger" style="background-color: #861532;">Guardar Cita</button>
+                    <button type="submit" class="btn btn-danger" style="background-color: #861532;">Guardar y Notificar</button>
                 </div>
             </form>
         </div>
@@ -312,34 +345,62 @@ function limpiarFormulario() {
     document.getElementById('formEvento').reset();
     document.getElementById('lugar').value = 'Oficina de Dirección';
     document.getElementById('modalTitulo').textContent = 'Registrar Nueva Cita';
+    marcarTodos(false);
+}
+
+function marcarTodos(estado) {
+    const checkboxes = document.querySelectorAll('.chk-usuario');
+    checkboxes.forEach(chk => chk.checked = estado);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     const calendarEl = document.getElementById('calendar');
-    const selectUsuarios = document.getElementById('selectUsuarios');
+    const contenedorUsuarios = document.getElementById('contenedorUsuarios');
+    const buscarUsuarioInput = document.getElementById('buscarUsuario');
 
-    function cargarUsuarios() {
+    // Cargar catálogo de usuarios como Checkboxes con formato corregido
+    function cargarUsuariosCheckboxes() {
         fetch('gestion_agenda.php?accion=listar_usuarios')
             .then(res => res.json())
             .then(data => {
-                selectUsuarios.innerHTML = '<option value="">-- Selecciona un usuario --</option>';
+                contenedorUsuarios.innerHTML = '';
                 if (data.status === 'success') {
                     data.data.forEach(user => {
-                        const option = document.createElement('option');
-                        option.value = user.id_usuario;
-                        option.textContent = `${user.nombre_completo} (${user.correo || 'Sin Correo'})`;
-                        selectUsuarios.appendChild(option);
+                        const div = document.createElement('div');
+                        // ps-4 da el margen necesario a la izquierda para que no se recorte el checkbox
+                        div.className = 'form-check usuario-item ps-4 pe-2 py-1 mb-1';
+                        
+                        const correoTxt = user.correo ? `<span class="text-muted font-monospace small">(${user.correo})</span>` : '<span class="text-danger small">(Sin Correo)</span>';
+                        
+                        div.innerHTML = `
+                            <input class="form-check-input chk-usuario" type="checkbox" name="id_usuario_asignado[]" value="${user.id_usuario}" id="usr_chk_${user.id_usuario}" style="cursor: pointer;">
+                            <label class="form-check-label w-100" style="cursor: pointer; word-break: break-word;" for="usr_chk_${user.id_usuario}">
+                                <strong>${user.nombre_completo}</strong> ${correoTxt}
+                            </label>
+                        `;
+                        contenedorUsuarios.appendChild(div);
                     });
                 } else {
-                    selectUsuarios.innerHTML = '<option value="">Error al cargar usuarios</option>';
+                    contenedorUsuarios.innerHTML = '<div class="text-danger small">Error al cargar la lista de usuarios.</div>';
                 }
             })
             .catch(() => {
-                selectUsuarios.innerHTML = '<option value="">Error de conexión</option>';
+                contenedorUsuarios.innerHTML = '<div class="text-danger small">Error de conexión al obtener usuarios.</div>';
             });
     }
 
-    cargarUsuarios();
+    cargarUsuariosCheckboxes();
+
+    // Filtro de búsqueda en tiempo real
+    buscarUsuarioInput.addEventListener('keyup', function() {
+        const filtro = this.value.toLowerCase();
+        const items = contenedorUsuarios.querySelectorAll('.usuario-item');
+        
+        items.forEach(item => {
+            const texto = item.textContent.toLowerCase();
+            item.style.display = texto.includes(filtro) ? 'block' : 'none';
+        });
+    });
 
     calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
@@ -382,7 +443,7 @@ document.addEventListener('DOMContentLoaded', function() {
             Swal.fire({
                 title: info.event.title,
                 html: `<div class="text-start">
-                        <p><b>Asignado a:</b> ${props.asignado_a || 'N/A'}</p>
+                        <p><b>Participantes:</b> ${props.asignado_a || 'N/A'}</p>
                         <p><b>Fecha:</b> ${props.fecha_cita}</p>
                         <p><b>Horario:</b> ${props.hora_inicio} a ${props.hora_fin} hrs</p>
                         <p><b>Lugar:</b> ${props.lugar}</p>
@@ -400,13 +461,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (result.isConfirmed) {
                     document.getElementById('id_cita').value = info.event.id;
                     document.getElementById('titulo').value = info.event.title;
-                    document.getElementById('selectUsuarios').value = props.id_usuario_asignado;
                     document.getElementById('fecha_cita').value = props.fecha_cita;
                     document.getElementById('hora_inicio').value = props.hora_inicio;
                     document.getElementById('hora_fin').value = props.hora_fin;
                     document.getElementById('estatus').value = props.estatus;
                     document.getElementById('motivo').value = props.motivo;
                     document.getElementById('lugar').value = props.lugar;
+                    
+                    // Marcar en la lista los checkboxes correspondientes
+                    marcarTodos(false);
+                    const selectedIds = props.id_usuario_asignado.split(',');
+                    selectedIds.forEach(id => {
+                        const chk = document.getElementById(`usr_chk_${id.trim()}`);
+                        if (chk) chk.checked = true;
+                    });
                     
                     document.getElementById('modalTitulo').textContent = 'Editar Cita';
                     new bootstrap.Modal(document.getElementById('modalEvento')).show();
