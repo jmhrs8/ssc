@@ -4,26 +4,26 @@ require_once 'includes/header.php';
 $mensajeExito = '';
 $mensajeError = '';
 
-// Obtener ID del usuario en sesión
+// Obtener ID del usuario en sesión (por defecto 1 si no está definido)
 $usuarioId = $_SESSION['user_id'] ?? $_SESSION['usuario_id'] ?? 1;
 
 // 1. REGISTRAR NUEVA SALIDA / VENTA
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
-    $productoId      = intval($_POST['producto_id'] ?? 0);
-    $clienteNombre   = !empty(trim($_POST['cliente'] ?? '')) ? trim($_POST['cliente']) : 'Público General';
-    $cantidad        = floatval($_POST['cantidad'] ?? 0);
-    $precioVenta     = floatval($_POST['precio_venta'] ?? 0);
-    $estadoCobro     = $_POST['estado_cobro'] ?? 'cobrado'; // cobrado | credito
-    $metodoCobro     = $_POST['metodo_cobro'] ?? 'efectivo';
+    $productoId     = intval($_POST['producto_id'] ?? 0);
+    $clienteNombre  = !empty(trim($_POST['cliente'] ?? '')) ? trim($_POST['cliente']) : 'Público General';
+    $cantidad       = floatval($_POST['cantidad'] ?? 0);
+    $precioVenta    = floatval($_POST['precio_venta'] ?? 0);
+    $estadoCobro    = $_POST['estado_cobro'] ?? 'cobrado'; // cobrado | credito
+    $metodoCobro    = $_POST['metodo_cobro'] ?? 'efectivo';
     $requiereFactura = isset($_POST['requiere_factura']) ? 1 : 0;
-    $facturaUrl      = null;
+    $facturaUrl     = null;
 
     if ($productoId > 0 && $cantidad > 0 && $precioVenta >= 0) {
         try {
             $pdo->beginTransaction();
 
-            // Verificar existencias usando stock_actual
-            $stmtP = $pdo->prepare("SELECT id, nombre, stock_actual FROM productos WHERE id = ? FOR UPDATE");
+            // Verificar existencias en tabla productos
+            $stmtP = $pdo->prepare("SELECT id, nombre, stock FROM productos WHERE id = ? FOR UPDATE");
             $stmtP->execute([$productoId]);
             $producto = $stmtP->fetch(PDO::FETCH_ASSOC);
 
@@ -31,23 +31,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
                 throw new Exception("El producto seleccionado no existe.");
             }
 
-            $stockDisponible = floatval($producto['stock_actual'] ?? 0);
-
-            if ($stockDisponible < $cantidad) {
-                throw new Exception("Stock insuficiente. Disponible: " . number_format($stockDisponible, 2));
+            if ($producto['stock'] < $cantidad) {
+                throw new Exception("Stock insuficiente. Disponible: " . $producto['stock']);
             }
 
-            // Subida de comprobante
+            // Subida de comprobante / factura / ticket si se adjunta
             if (isset($_FILES['comprobante']) && $_FILES['comprobante']['error'] === UPLOAD_ERR_OK) {
                 $ext = strtolower(pathinfo($_FILES['comprobante']['name'], PATHINFO_EXTENSION));
                 $permitidas = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'xml'];
-
+                
                 if (in_array($ext, $permitidas)) {
                     $dirSubida = 'uploads/ventas/';
                     if (!is_dir($dirSubida)) {
                         mkdir($dirSubida, 0777, true);
                     }
-                    $nombreArchivo = 'salida_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                    $nombreArchivo = 'salida_' . time() . '_' . uniqid() . '.' . $ext;
                     $facturaUrl = $dirSubida . $nombreArchivo;
                     move_uploaded_file($_FILES['comprobante']['tmp_name'], $facturaUrl);
                 }
@@ -59,10 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
             $tipoPago = ($estadoCobro === 'credito') ? 'credito' : 'contado';
 
             // Insertar encabezado de Salida
-            $stmtIns = $pdo->prepare("INSERT INTO salidas
-                (usuario_id, cliente, subtotal, iva, total, monto_total, estado_cobro, metodo_cobro, requiere_factura, con_factura, factura_url, tipo_pago, metodo_pago, fecha)
+            $stmtIns = $pdo->prepare("INSERT INTO salidas 
+                (usuario_id, cliente, subtotal, iva, total, monto_total, estado_cobro, metodo_cobro, requiere_factura, con_factura, factura_url, tipo_pago, metodo_pago, fecha) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-
+            
             $stmtIns->execute([
                 $usuarioId,
                 $clienteNombre,
@@ -81,9 +79,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
 
             $salidaId = $pdo->lastInsertId();
 
-            // Insertar en detalle_salidas
-            $stmtDet = $pdo->prepare("INSERT INTO detalle_salidas
-                (salida_id, producto_id, cantidad, precio_unitario, subtotal)
+            // Insertar detalle del producto en detalle_salidas
+            $stmtDet = $pdo->prepare("INSERT INTO detalle_salidas 
+                (salida_id, producto_id, cantidad, precio_unitario, subtotal) 
                 VALUES (?, ?, ?, ?, ?)");
             $stmtDet->execute([
                 $salidaId,
@@ -93,40 +91,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
                 $total
             ]);
 
-            // Descontar inventario de la columna stock_actual
-            $stmtUpdStk = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual - ? WHERE id = ?");
+            // Descontar inventario
+            $stmtUpdStk = $pdo->prepare("UPDATE productos SET stock = stock - ? WHERE id = ?");
             $stmtUpdStk->execute([$cantidad, $productoId]);
 
-            // Registrar en INGRESOS
+            // Registrar en Ingresos si fue cobrado al contado
             if ($estadoCobro === 'cobrado') {
-                $conceptoIngreso = "Venta / Salida #" . $salidaId . " - " . $producto['nombre'] . " (" . $clienteNombre . ")";
-                try {
-                    $stmtIng = $pdo->prepare("INSERT INTO ingresos (concepto, monto_total, metodo_pago, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, NOW())");
-                    $stmtIng->execute([$conceptoIngreso, $total, $metodoCobro, $facturaUrl]);
-                } catch (\PDOException $exIng1) {
-                    try {
-                        $stmtIng = $pdo->prepare("INSERT INTO ingresos (concepto, total, metodo_pago, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, NOW())");
-                        $stmtIng->execute([$conceptoIngreso, $total, $metodoCobro, $facturaUrl]);
-                    } catch (\PDOException $exIng2) {
-                        // Salta si hay inconsistencia estructural opcional
-                    }
-                }
+                $stmtIng = $pdo->prepare("INSERT INTO ingresos 
+                    (concepto, monto, metodo_pago, comprobante_url, fecha_pago) 
+                    VALUES (?, ?, ?, ?, NOW())");
+                $stmtIng->execute([
+                    "Venta / Salida #" . $salidaId . " - " . $producto['nombre'] . " (" . $clienteNombre . ")",
+                    $total,
+                    $metodoCobro,
+                    $facturaUrl
+                ]);
             }
 
-            // Registrar en CUENTAS_COBRAR
+            // Registrar en Cuentas por Cobrar si fue a crédito
             if ($estadoCobro === 'credito') {
-                $conceptoCxC = "Venta #" . $salidaId . ": " . $producto['nombre'];
-                try {
-                    $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar (cliente, concepto, monto_total, estatus, comprobante_url, fecha_registro) VALUES (?, ?, ?, 'pendiente', ?, NOW())");
-                    $stmtCxC->execute([$clienteNombre, $conceptoCxC, $total, $facturaUrl]);
-                } catch (\PDOException $exCxC1) {
-                    try {
-                        $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar (cliente, concepto, monto, estatus, comprobante_url, fecha_registro) VALUES (?, ?, ?, 'pendiente', ?, NOW())");
-                        $stmtCxC->execute([$clienteNombre, $conceptoCxC, $total, $facturaUrl]);
-                    } catch (\PDOException $exCxC2) {
-                        // Salta si hay inconsistencia estructural opcional
-                    }
-                }
+                $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar 
+                    (cliente, concepto, monto, estatus, comprobante_url, fecha_registro) 
+                    VALUES (?, ?, ?, 'pendiente', ?, NOW())");
+                $stmtCxC->execute([
+                    $clienteNombre,
+                    "Venta #" . $salidaId . ": " . $producto['nombre'],
+                    $total,
+                    $facturaUrl
+                ]);
             }
 
             $pdo->commit();
@@ -143,29 +135,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
 }
 
 // Cargar Catálogo de Productos
-$productos = [];
 try {
-    $stmtProd = $pdo->query("SELECT id, nombre, stock_actual, tipo_unidad, precio_venta FROM productos ORDER BY nombre ASC");
-    if ($stmtProd) {
-        $productos = $stmtProd->fetchAll(PDO::FETCH_ASSOC);
-    }
+    $productos = $pdo->query("SELECT id, nombre, stock, precio_venta FROM productos ORDER BY nombre ASC")->fetchAll(PDO::FETCH_ASSOC);
 } catch (\PDOException $e) {
-    $mensajeError = "Error al consultar catálogo de productos: " . $e->getMessage();
+    $productos = [];
 }
 
-// Cargar Historial
-$salidas = [];
+// Cargar Historial de Salidas haciendo JOIN con detalle_salidas y productos
 try {
     $sqlSalidas = "SELECT s.*, ds.cantidad, ds.precio_unitario, p.nombre AS producto_nombre
                    FROM salidas s
                    LEFT JOIN detalle_salidas ds ON s.id = ds.salida_id
                    LEFT JOIN productos p ON ds.producto_id = p.id
                    ORDER BY s.id DESC";
-    $stmtSal = $pdo->query($sqlSalidas);
-    if ($stmtSal) {
-        $salidas = $stmtSal->fetchAll(PDO::FETCH_ASSOC);
-    }
+    $salidas = $pdo->query($sqlSalidas)->fetchAll(PDO::FETCH_ASSOC);
 } catch (\PDOException $e) {
+    $salidas = [];
     $mensajeError = "Error al consultar historial de salidas: " . $e->getMessage();
 }
 ?>
@@ -199,17 +184,13 @@ try {
 
             <div class="col-md-3">
                 <label class="form-label fw-bold">Producto (*):</label>
-                <select name="producto_id" id="select_producto" class="form-select" required>
-                    <option value="" data-precio="">-- Seleccionar Producto --</option>
-                    <?php if (!empty($productos)): ?>
-                        <?php foreach ($productos as $p): ?>
-                            <option value="<?= htmlspecialchars($p['id']) ?>" data-precio="<?= htmlspecialchars($p['precio_venta'] ?? 0) ?>">
-                                <?= htmlspecialchars($p['nombre']) ?> (Stock: <?= number_format($p['stock_actual'] ?? 0, 2) ?> <?= htmlspecialchars($p['tipo_unidad'] ?? '') ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <option value="" disabled>No hay productos disponibles</option>
-                    <?php endif; ?>
+                <select name="producto_id" class="form-select" required>
+                    <option value="">Seleccionar Producto</option>
+                    <?php foreach ($productos as $p): ?>
+                        <option value="<?= $p['id'] ?>">
+                            <?= htmlspecialchars($p['nombre']) ?> (Stock: <?= $p['stock'] ?>)
+                        </option>
+                    <?php endforeach; ?>
                 </select>
             </div>
 
@@ -225,7 +206,7 @@ try {
 
             <div class="col-md-2">
                 <label class="form-label fw-bold">Precio Venta ($) (*):</label>
-                <input type="number" step="0.01" min="0" name="precio_venta" id="input_precio_venta" class="form-control" placeholder="0.00" required>
+                <input type="number" step="0.01" min="0" name="precio_venta" class="form-control" placeholder="0.00" required>
             </div>
 
             <div class="col-md-2">
@@ -292,7 +273,7 @@ try {
                         <tr><td colspan="9" class="text-center py-3 text-muted">No hay registros de salidas aún.</td></tr>
                     <?php else: ?>
                         <?php foreach ($salidas as $s): ?>
-                            <?php
+                            <?php 
                                 $fecha = $s['fecha'] ?? $s['fecha_salida'] ?? null;
                                 $totalMostrar = floatval($s['total'] ?? $s['monto_total'] ?? 0);
                             ?>
@@ -328,25 +309,5 @@ try {
         </div>
     </div>
 </div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const selectProducto = document.getElementById('select_producto');
-    const inputPrecio = document.getElementById('input_precio_venta');
-
-    if (selectProducto && inputPrecio) {
-        selectProducto.addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            const precio = selectedOption.getAttribute('data-precio');
-            
-            if (precio !== null && precio !== '') {
-                inputPrecio.value = parseFloat(precio).toFixed(2);
-            } else {
-                inputPrecio.value = '';
-            }
-        });
-    }
-});
-</script>
 
 <?php require_once 'includes/footer.php'; ?>

@@ -13,24 +13,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
     $cantidad        = floatval($_POST['cantidad'] ?? 0);
     $costoUnitario   = floatval($_POST['costo_unitario'] ?? 0);
     $estatusPago     = $_POST['estatus_pago'] ?? 'pagado';
-    $tipoComprobante = $_POST['tipo_comprobante'] ?? 'sin_comprobante';
+    
+    // Mapeo seguro para evitar "Data truncated" si la columna es un ENUM corto o VARCHAR reducido
+    $rawTipoComp     = $_POST['tipo_comprobante'] ?? 'sin_comprobante';
+    $mapaComprobante = [
+        'sin_comprobante' => 'ninguno',
+        'factura'         => 'factura',
+        'remision'        => 'remision'
+    ];
+    $tipoComprobante = $mapaComprobante[$rawTipoComp] ?? 'ninguno';
+
     $montoTotal      = $cantidad * $costoUnitario;
     $fechaPago       = ($estatusPago === 'pagado') ? date('Y-m-d H:i:s') : null;
     $comprobanteUrl  = null;
 
     if ($productoId > 0 && $cantidad > 0 && $costoUnitario >= 0) {
-        
-        if (!empty($_FILES['comprobante']['name'])) {
+
+        // Validar subida de comprobante
+        if (!empty($_FILES['comprobante']['name']) && $_FILES['comprobante']['error'] === UPLOAD_ERR_OK) {
             $file = $_FILES['comprobante'];
             $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            $extsPermitidas = ['pdf', 'xml', 'jpg', 'jpeg', 'png', 'webp'];
 
-            if (in_array($ext, $extsPermitidas)) {
+            $extsPermitidas = ['pdf', 'xml', 'jpg', 'jpeg', 'png', 'webp'];
+            $mimesPermitidos = [
+                'application/pdf',
+                'text/xml',
+                'application/xml',
+                'image/jpeg',
+                'image/png',
+                'image/webp'
+            ];
+
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mimeType = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+
+            if (in_array($ext, $extsPermitidas) && in_array($mimeType, $mimesPermitidos)) {
                 if (!is_dir($dirFacturas)) {
                     mkdir($dirFacturas, 0755, true);
                 }
 
-                $nombreArchivo = 'compra_' . time() . '_' . uniqid() . '.' . $ext;
+                $nombreArchivo = 'compra_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                 $destino = $dirFacturas . $nombreArchivo;
 
                 if (move_uploaded_file($file['tmp_name'], $destino)) {
@@ -48,8 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
                 $pdo->beginTransaction();
 
                 // a) Insertar Entrada
-                $stmt = $pdo->prepare("INSERT INTO entradas_inventario 
-                    (producto_id, proveedor_id, cantidad, costo_unitario, monto_total, estatus_pago, tipo_comprobante, comprobante_url, fecha_pago) 
+                $stmt = $pdo->prepare("INSERT INTO entradas_inventario
+                    (producto_id, proveedor_id, cantidad, costo_unitario, monto_total, estatus_pago, tipo_comprobante, comprobante_url, fecha_pago)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([$productoId, $proveedorId, $cantidad, $costoUnitario, $montoTotal, $estatusPago, $tipoComprobante, $comprobanteUrl, $fechaPago]);
                 $entradaId = $pdo->lastInsertId();
@@ -58,34 +81,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
                 $stmtStock = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual + ?, costo_unitario = ? WHERE id = ?");
                 $stmtStock->execute([$cantidad, $costoUnitario, $productoId]);
 
-                // c) Registrar Egreso si fue Pagado
-                if ($estatusPago === 'pagado') {
-                    $stmtP = $pdo->prepare("SELECT nombre FROM productos WHERE id = ?");
-                    $stmtP->execute([$productoId]);
-                    $prodNom = $stmtP->fetchColumn() ?: 'Producto #' . $productoId;
+                // c) Obtener nombre de producto con bloqueo de fila para consistencia
+                $stmtP = $pdo->prepare("SELECT nombre FROM productos WHERE id = ? FOR UPDATE");
+                $stmtP->execute([$productoId]);
+                $prodNom = $stmtP->fetchColumn() ?: 'Producto #' . $productoId;
 
+                if ($estatusPago === 'pagado') {
+                    // d) Registrar Egreso si fue Pagado
                     $concepto = "Compra de {$cantidad} unid. de {$prodNom}";
-                    $stmtEgr = $pdo->prepare("INSERT INTO egresos 
-                        (entrada_id, proveedor_id, concepto, monto, metodo_pago, tipo_comprobante, comprobante_url, fecha_pago) 
+                    $stmtEgr = $pdo->prepare("INSERT INTO egresos
+                        (entrada_id, proveedor_id, concepto, monto, metodo_pago, tipo_comprobante, comprobante_url, fecha_pago)
                         VALUES (?, ?, ?, ?, 'efectivo', ?, ?, NOW())");
                     $stmtEgr->execute([$entradaId, $proveedorId, $concepto, $montoTotal, $tipoComprobante, $comprobanteUrl]);
                 } else {
-                    // d) Registrar en Cuentas por Pagar
-                    $stmtP = $pdo->prepare("SELECT nombre FROM productos WHERE id = ?");
-                    $stmtP->execute([$productoId]);
-                    $prodNom = $stmtP->fetchColumn() ?: 'Producto #' . $productoId;
-
+                    // e) Registrar en Cuentas por Pagar
                     $concepto = "Compra a crédito de {$cantidad} unid. de {$prodNom}";
-                    $stmtCxP = $pdo->prepare("INSERT INTO cuentas_pagar 
-                        (entrada_id, proveedor_id, concepto, monto, estatus, comprobante_url) 
+                    $stmtCxP = $pdo->prepare("INSERT INTO cuentas_pagar
+                        (entrada_id, proveedor_id, concepto, monto, estatus, comprobante_url)
                         VALUES (?, ?, ?, ?, 'pendiente', ?)");
                     $stmtCxP->execute([$entradaId, $proveedorId, $concepto, $montoTotal, $comprobanteUrl]);
                 }
 
                 $pdo->commit();
-                $mensajeExito = "Entrada registrada correctamente." . ($estatusPago === 'pendiente' ? " Se envió a Cuentas por Pagado." : " Marcada como Pagada e ingresada a Egresos.");
+                $mensajeExito = "Entrada registrada correctamente." . ($estatusPago === 'pendiente' ? " Se envió a Cuentas por Pagar." : " Marcada como Pagada e ingresada a Egresos.");
             } catch (\PDOException $e) {
-                $pdo->rollBack();
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $mensajeError = "Error en la base de datos: " . $e->getMessage();
             }
         }
@@ -94,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
     }
 }
 
-// Cargar catálogo de productos usando stock_actual
+// Cargar catálogo de productos
 try {
     $productos = $pdo->query("SELECT id, nombre, stock_actual, tipo_unidad FROM productos ORDER BY nombre ASC")->fetchAll(PDO::FETCH_ASSOC);
 } catch (\PDOException $e) {
@@ -109,10 +131,10 @@ try {
 
 // Cargar historial
 try {
-    $sqlEntradas = "SELECT e.*, p.nombre AS producto_nombre, pr.nombre AS proveedor_nombre 
-                    FROM entradas_inventario e 
-                    JOIN productos p ON e.producto_id = p.id 
-                    LEFT JOIN proveedores pr ON e.proveedor_id = pr.id 
+    $sqlEntradas = "SELECT e.*, p.nombre AS producto_nombre, pr.nombre AS proveedor_nombre
+                    FROM entradas_inventario e
+                    JOIN productos p ON e.producto_id = p.id
+                    LEFT JOIN proveedores pr ON e.proveedor_id = pr.id
                     ORDER BY e.fecha_registro DESC LIMIT 50";
     $entradas = $pdo->query($sqlEntradas)->fetchAll(PDO::FETCH_ASSOC);
 } catch (\PDOException $e) {
@@ -155,7 +177,7 @@ try {
                         <option value="">-- Seleccionar Producto --</option>
                         <?php foreach ($productos as $prod): ?>
                             <option value="<?= $prod['id'] ?>">
-                                <?= htmlspecialchars($prod['nombre']) ?> (Stock actual: <?= number_format($prod['stock_actual'], 2) ?> <?= $prod['tipo_unidad'] ?>s)
+                                <?= htmlspecialchars($prod['nombre']) ?> (Stock actual: <?= number_format($prod['stock_actual'], 2) ?> <?= htmlspecialchars($prod['tipo_unidad']) ?>s)
                             </option>
                         <?php endforeach; ?>
                     </select>
