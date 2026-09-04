@@ -86,7 +86,7 @@ $bgUrl = !empty($empresa['bg_url']) ? $empresa['bg_url'] : '';
         <li class="nav-item"><a class="nav-link" href="index.php"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
         <li class="nav-item"><a class="nav-link" href="inventario.php"><i class="bi bi-box-seam"></i> Inventario</a></li>
         <li class="nav-item"><a class="nav-link" href="proveedores.php"><i class="bi bi-truck text-warning"></i> Proveedores</a></li>
-        <li class="nav-item"><a class="nav-link" href="entradas.php"><i class="bi bi-box-arrow-in-down text-success"></i> Entradas/Compras</a></li>
+        <li class="nav-item"><a class="nav-link" href="entradas.php"><i class="bi bi-box-arrow-in-down text-success"></i> Resustir/Producto</a></li>
         <li class="nav-item"><a class="nav-link" href="salidas.php"><i class="bi bi-cart-check text-info"></i> Ventas/Salidas</a></li>
         <li class="nav-item"><a class="nav-link" href="ingresos.php"><i class="bi bi-cash-coin text-success"></i> Ingresos</a></li>
         <li class="nav-item"><a class="nav-link" href="egresos.php"><i class="bi bi-wallet2 text-danger"></i> Egresos</a></li>

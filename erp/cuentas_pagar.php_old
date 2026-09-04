@@ -6,9 +6,9 @@ $mensajeError = '';
 
 // 1. CREAR NUEVA CUENTA POR PAGAR
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crear_cuenta'])) {
-    $proveedorId    = !empty($_POST['proveedor_id']) ? intval($_POST['proveedor_id']) : null;
-    $concepto       = trim($_POST['concepto'] ?? '');
-    $monto          = floatval($_POST['monto'] ?? 0);
+    $proveedorId = !empty($_POST['proveedor_id']) ? intval($_POST['proveedor_id']) : null;
+    $concepto    = trim($_POST['concepto'] ?? '');
+    $monto       = floatval($_POST['monto'] ?? 0);
     $comprobanteUrl = null;
 
     if ($monto > 0 && !empty($concepto)) {
@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crear_cuenta'])) {
             if (isset($_FILES['comprobante']) && $_FILES['comprobante']['error'] === UPLOAD_ERR_OK) {
                 $ext = strtolower(pathinfo($_FILES['comprobante']['name'], PATHINFO_EXTENSION));
                 $permitidas = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'xml'];
-
+                
                 if (in_array($ext, $permitidas)) {
                     $dirSubida = 'uploads/comprobantes/';
                     if (!is_dir($dirSubida)) {
@@ -28,9 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crear_cuenta'])) {
                 }
             }
 
-            $stmtIns = $pdo->prepare("INSERT INTO cuentas_pagar
-                (proveedor_id, concepto, monto, estatus, comprobante_url, fecha_emision)
-                VALUES (?, ?, ?, 'pendiente', ?, NOW())");
+            $stmtIns = $pdo->prepare("INSERT INTO cuentas_pagar 
+                (proveedor_id, concepto, monto, estatus, comprobante_url) 
+                VALUES (?, ?, ?, 'pendiente', ?)");
             $stmtIns->execute([$proveedorId, $concepto, $monto, $comprobanteUrl]);
 
             $mensajeExito = "Cuenta por pagar registrada exitosamente.";
@@ -51,6 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_cuenta'])) {
 
     if ($cuentaId > 0 && $monto > 0 && !empty($concepto)) {
         try {
+            // Verificar que siga pendiente antes de editar
             $stmtVerif = $pdo->prepare("SELECT estatus FROM cuentas_pagar WHERE id = ?");
             $stmtVerif->execute([$cuentaId]);
             $estatusActual = $stmtVerif->fetchColumn();
@@ -59,8 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_cuenta'])) {
                 throw new Exception("No se puede editar una cuenta que ya ha sido pagada.");
             }
 
-            $stmtUpd = $pdo->prepare("UPDATE cuentas_pagar
-                                      SET proveedor_id = ?, concepto = ?, monto = ?
+            $stmtUpd = $pdo->prepare("UPDATE cuentas_pagar 
+                                      SET proveedor_id = ?, concepto = ?, monto = ? 
                                       WHERE id = ?");
             $stmtUpd->execute([$proveedorId, $concepto, $monto, $cuentaId]);
 
@@ -94,8 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pagar_cuenta'])) {
                 throw new Exception("Esta cuenta ya ha sido pagada previamente.");
             }
 
-            $stmtUpdC = $pdo->prepare("UPDATE cuentas_pagar SET estatus = 'pagado', metodo_pago = ?, fecha_pago = NOW() WHERE id = ?");
-            $stmtUpdC->execute([$metodoPago, $cuentaId]);
+            $stmtUpdC = $pdo->prepare("UPDATE cuentas_pagar SET estatus = 'pagado', fecha_pago = NOW() WHERE id = ?");
+            $stmtUpdC->execute([$cuentaId]);
 
             if (!empty($cuenta['entrada_id'])) {
                 $stmtUpdE = $pdo->prepare("UPDATE entradas_inventario SET estatus_pago = 'pagado', fecha_pago = NOW() WHERE id = ?");
@@ -134,7 +135,7 @@ try {
     $proveedores = [];
 }
 
-// Cargar Cuentas por Pagar (Corregido con la estructura exacta de MySQL)
+// Cargar Cuentas por Pagar
 try {
     $sqlCxP = "SELECT cp.*, pr.nombre AS proveedor_nombre
                FROM cuentas_pagar cp
@@ -247,7 +248,7 @@ foreach ($cuentas as $c) {
             <table class="table table-striped table-hover align-middle mb-0">
                 <thead class="table-dark">
                     <tr>
-                        <th>Fecha Emisión</th>
+                        <th>Fecha Registro</th>
                         <th>Proveedor</th>
                         <th>Concepto</th>
                         <th class="text-end">Monto Total</th>
@@ -261,8 +262,8 @@ foreach ($cuentas as $c) {
                         <tr><td colspan="7" class="text-center py-3 text-muted">No hay cuentas por pagar registradas.</td></tr>
                     <?php else: ?>
                         <?php foreach ($cuentas as $c): ?>
-                            <?php
-                                $fechaMostrar = $c['fecha_emision'] ?? null;
+                            <?php 
+                                $fechaMostrar = $c['fecha_registro'] ?? $c['fecha_emision'] ?? $c['fecha'] ?? null;
                             ?>
                             <tr>
                                 <td><?= $fechaMostrar ? date('d/m/Y H:i', strtotime($fechaMostrar)) : 'N/A' ?></td>
@@ -304,7 +305,7 @@ foreach ($cuentas as $c) {
                                                     <form method="POST" action="cuentas_pagar.php">
                                                         <input type="hidden" name="editar_cuenta" value="1">
                                                         <input type="hidden" name="cuenta_id" value="<?= $c['id'] ?>">
-
+                                                        
                                                         <div class="modal-header bg-warning text-dark">
                                                             <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i> Editar Cuenta por Pagar</h5>
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -353,7 +354,7 @@ foreach ($cuentas as $c) {
                                                         <div class="modal-body">
                                                             <p><strong>Concepto:</strong> <?= htmlspecialchars($c['concepto'] ?? 'Pago de factura') ?></p>
                                                             <p><strong>Monto a pagar:</strong> <span class="fs-5 text-success">$<?= number_format($c['monto'], 2) ?></span></p>
-
+                                                            
                                                             <div class="mb-3">
                                                                 <label class="form-label fw-bold">Método de Pago:</label>
                                                                 <select name="metodo_pago" class="form-select" required>

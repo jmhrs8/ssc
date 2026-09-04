@@ -6,9 +6,7 @@ $mensajeError = '';
 
 $dirFacturas = __DIR__ . '/uploads/facturas_compras/';
 
-// ==========================================
-// 1. REGISTRAR ENTRADA
-// ==========================================
+// REGISTRAR ENTRADA
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada'])) {
     $productoId      = intval($_POST['producto_id'] ?? 0);
     $proveedorId     = !empty($_POST['proveedor_id']) ? intval($_POST['proveedor_id']) : null;
@@ -30,7 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
 
     if ($productoId > 0 && $cantidad > 0 && $costoUnitario >= 0) {
 
-        // Subida de comprobante
         if (!empty($_FILES['comprobante']['name']) && $_FILES['comprobante']['error'] === UPLOAD_ERR_OK) {
             $file = $_FILES['comprobante'];
             $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
@@ -63,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
                     $mensajeError = "No se pudo subir la factura o comprobante.";
                 }
             } else {
-                $mensajeError = "Formato de archivo no permitido. Sube PDF, XML, JPG, PNG o WEBP.";
+                $mensajeError = "Formato no permitido. Sube PDF, XML, JPG, PNG o WEBP.";
             }
         }
 
@@ -71,32 +68,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
             try {
                 $pdo->beginTransaction();
 
-                // a) Insertar en entradas_inventario
+                // a) Insertar Entrada
                 $stmt = $pdo->prepare("INSERT INTO entradas_inventario
                     (producto_id, proveedor_id, cantidad, costo_unitario, monto_total, estatus_pago, tipo_comprobante, comprobante_url, fecha_pago)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([$productoId, $proveedorId, $cantidad, $costoUnitario, $montoTotal, $estatusPago, $tipoComprobante, $comprobanteUrl, $fechaPago]);
                 $entradaId = $pdo->lastInsertId();
 
-                // b) Actualizar stock y costo en tabla productos
+                // b) Sumar a stock_actual y actualizar costo
                 $stmtStock = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual + ?, costo_unitario = ? WHERE id = ?");
                 $stmtStock->execute([$cantidad, $costoUnitario, $productoId]);
 
-                // c) Obtener nombre de producto para conceptos
+                // c) Obtener nombre de producto
                 $stmtP = $pdo->prepare("SELECT nombre FROM productos WHERE id = ? FOR UPDATE");
                 $stmtP->execute([$productoId]);
                 $prodNom = $stmtP->fetchColumn() ?: 'Producto #' . $productoId;
 
-                // d) REGISTRO FINANCIERO (Evita duplicidad)
                 if ($estatusPago === 'pagado') {
-                    // Si es de contado -> Genera EGRESO
+                    // d) Registrar Egreso
                     $concepto = "Compra de {$cantidad} unid. de {$prodNom}";
                     $stmtEgr = $pdo->prepare("INSERT INTO egresos
                         (entrada_id, proveedor_id, concepto, monto, metodo_pago, tipo_comprobante, comprobante_url, fecha_pago)
                         VALUES (?, ?, ?, ?, 'efectivo', ?, ?, NOW())");
                     $stmtEgr->execute([$entradaId, $proveedorId, $concepto, $montoTotal, $tipoComprobante, $comprobanteUrl]);
                 } else {
-                    // Si es a crédito -> ÚNICAMENTE Genera CUENTA POR PAGAR (CxP)
+                    // e) Registrar CxP
                     $concepto = "Compra a crédito de {$cantidad} unid. de {$prodNom}";
                     $stmtCxP = $pdo->prepare("INSERT INTO cuentas_pagar
                         (entrada_id, proveedor_id, concepto, monto, estatus, comprobante_url)
@@ -118,9 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_entrada']))
     }
 }
 
-// ==========================================
-// 2. EDITAR ENTRADA
-// ==========================================
+// EDITAR ENTRADA
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_entrada'])) {
     $entradaId     = intval($_POST['entrada_id'] ?? 0);
     $proveedorId   = !empty($_POST['proveedor_id']) ? intval($_POST['proveedor_id']) : null;
@@ -132,17 +126,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_entrada'])) {
         try {
             $pdo->beginTransaction();
 
+            // 1. Obtener datos actuales de la entrada
             $stmtOriginal = $pdo->prepare("SELECT * FROM entradas_inventario WHERE id = ? FOR UPDATE");
             $stmtOriginal->execute([$entradaId]);
             $entradaAnt = $stmtOriginal->fetch(PDO::FETCH_ASSOC);
 
             if ($entradaAnt) {
-                $productoId     = $entradaAnt['producto_id'];
-                $cantAnterior   = floatval($entradaAnt['cantidad']);
+                $productoId   = $entradaAnt['producto_id'];
+                $cantAnterior = floatval($entradaAnt['cantidad']);
                 $diferenciaCant = $nuevaCantidad - $cantAnterior;
-                $nuevoMonto     = $nuevaCantidad * $nuevoCosto;
+                $nuevoMonto   = $nuevaCantidad * $nuevoCosto;
 
-                // Reemplazo de archivo si suben otro
+                // Manejo de archivo si se sube uno nuevo
                 $comprobanteUrl = $entradaAnt['comprobante_url'];
                 if (!empty($_FILES['comprobante']['name']) && $_FILES['comprobante']['error'] === UPLOAD_ERR_OK) {
                     $file = $_FILES['comprobante'];
@@ -150,33 +145,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_entrada'])) {
                     $nombreArchivo = 'compra_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $destino = $dirFacturas . $nombreArchivo;
                     if (move_uploaded_file($file['tmp_name'], $destino)) {
-                        if (!empty($entradaAnt['comprobante_url'])) {
-                            $oldPath = __DIR__ . '/' . $entradaAnt['comprobante_url'];
-                            if (file_exists($oldPath)) {
-                                @unlink($oldPath);
-                            }
-                        }
                         $comprobanteUrl = 'uploads/facturas_compras/' . $nombreArchivo;
                     }
                 }
 
-                // Ajustar stock
+                // 2. Actualizar stock del producto con la diferencia
                 $stmtStock = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual + ?, costo_unitario = ? WHERE id = ?");
                 $stmtStock->execute([$diferenciaCant, $nuevoCosto, $productoId]);
 
-                // Actualizar la entrada
-                $fechaPago = ($estatusPago === 'pagado') ? date('Y-m-d H:i:s') : null;
-                $stmtUpd = $pdo->prepare("UPDATE entradas_inventario SET
-                    proveedor_id = ?, cantidad = ?, costo_unitario = ?, monto_total = ?,
-                    estatus_pago = ?, comprobante_url = ?, fecha_pago = ? WHERE id = ?");
-                $stmtUpd->execute([$proveedorId, $nuevaCantidad, $nuevoCosto, $nuevoMonto, $estatusPago, $comprobanteUrl, $fechaPago, $entradaId]);
+                // 3. Actualizar registro de la entrada
+                $stmtUpd = $pdo->prepare("UPDATE entradas_inventario SET 
+                    proveedor_id = ?, cantidad = ?, costo_unitario = ?, monto_total = ?, 
+                    estatus_pago = ?, comprobante_url = ? WHERE id = ?");
+                $stmtUpd->execute([$proveedorId, $nuevaCantidad, $nuevoCosto, $nuevoMonto, $estatusPago, $comprobanteUrl, $entradaId]);
 
-                // Nombre producto
+                // 4. Actualizar egresos o cuentas por pagar
                 $stmtP = $pdo->prepare("SELECT nombre FROM productos WHERE id = ?");
                 $stmtP->execute([$productoId]);
                 $prodNom = $stmtP->fetchColumn() ?: 'Producto #' . $productoId;
 
-                // Limpiar vínculos previos para re-sincronizar correctamente
+                // Limpiar registros previos asociados
                 $pdo->prepare("DELETE FROM egresos WHERE entrada_id = ?")->execute([$entradaId]);
                 $pdo->prepare("DELETE FROM cuentas_pagar WHERE entrada_id = ?")->execute([$entradaId]);
 
@@ -211,9 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_entrada'])) {
     }
 }
 
-// ==========================================
-// 3. ELIMINAR ENTRADA
-// ==========================================
+// ELIMINAR ENTRADA
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_entrada'])) {
     $entradaId = intval($_POST['entrada_id'] ?? 0);
 
@@ -221,6 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_entrada'])) 
         try {
             $pdo->beginTransaction();
 
+            // 1. Obtener la información de la entrada antes de eliminar
             $stmtEnt = $pdo->prepare("SELECT producto_id, cantidad, comprobante_url FROM entradas_inventario WHERE id = ? FOR UPDATE");
             $stmtEnt->execute([$entradaId]);
             $entrada = $stmtEnt->fetch(PDO::FETCH_ASSOC);
@@ -229,18 +216,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_entrada'])) 
                 $productoId = $entrada['producto_id'];
                 $cantidad   = floatval($entrada['cantidad']);
 
-                // Descontar del inventario
+                // 2. Restar la cantidad ingresada del inventario del producto
                 $stmtRestarStock = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual - ? WHERE id = ?");
                 $stmtRestarStock->execute([$cantidad, $productoId]);
 
-                // Eliminar de egresos y de cuentas_pagar si existieran
+                // 3. Eliminar registros vinculados en egresos y cuentas_pagar
                 $pdo->prepare("DELETE FROM egresos WHERE entrada_id = ?")->execute([$entradaId]);
                 $pdo->prepare("DELETE FROM cuentas_pagar WHERE entrada_id = ?")->execute([$entradaId]);
 
-                // Eliminar entrada
+                // 4. Eliminar el registro de la entrada
                 $pdo->prepare("DELETE FROM entradas_inventario WHERE id = ?")->execute([$entradaId]);
 
-                // Borrar archivo
+                // 5. Eliminar el archivo adjunto si existe
                 if (!empty($entrada['comprobante_url'])) {
                     $rutaArchivo = __DIR__ . '/' . $entrada['comprobante_url'];
                     if (file_exists($rutaArchivo)) {
@@ -249,7 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_entrada'])) 
                 }
 
                 $pdo->commit();
-                $mensajeExito = "Entrada #{$entradaId} eliminada correctamente.";
+                $mensajeExito = "Entrada #{$entradaId} eliminada correctamente y descontada del inventario.";
             } else {
                 $pdo->rollBack();
                 $mensajeError = "El registro de entrada no existe o ya fue eliminado.";
@@ -265,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_entrada'])) 
     }
 }
 
-// CONSULTAS DE DATOS
+// Cargar catálogo de productos
 try {
     $productos = $pdo->query("SELECT id, nombre, stock_actual, tipo_unidad FROM productos ORDER BY nombre ASC")->fetchAll(PDO::FETCH_ASSOC);
 } catch (\PDOException $e) {
@@ -278,6 +265,7 @@ try {
     $proveedores = [];
 }
 
+// Cargar historial
 try {
     $sqlEntradas = "SELECT e.*, p.nombre AS producto_nombre, pr.nombre AS proveedor_nombre
                     FROM entradas_inventario e
@@ -434,7 +422,7 @@ try {
                                 </td>
                                 <td class="text-center">
                                     <div class="btn-group" role="group">
-                                        <button class="btn btn-sm btn-outline-warning btn-editar"
+                                        <button class="btn btn-sm btn-outline-warning btn-editar" 
                                                 data-id="<?= $ent['id'] ?>"
                                                 data-producto="<?= htmlspecialchars($ent['producto_nombre']) ?>"
                                                 data-proveedor="<?= $ent['proveedor_id'] ?? '' ?>"
@@ -462,7 +450,7 @@ try {
     </div>
 </div>
 
-<!-- MODAL EDITAR ENTRADA -->
+<!-- MODAL PARA EDITAR ENTRADA -->
 <div class="modal fade" id="modalEditarEntrada" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -523,7 +511,7 @@ try {
     </div>
 </div>
 
-<!-- MODAL ELIMINAR ENTRADA -->
+<!-- MODAL PARA ELIMINAR ENTRADA -->
 <div class="modal fade" id="modalEliminarEntrada" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -558,6 +546,7 @@ try {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Escuchar botones de Edición
     const editButtons = document.querySelectorAll('.btn-editar');
     editButtons.forEach(btn => {
         btn.addEventListener('click', function() {
@@ -570,6 +559,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Escuchar botones de Eliminación
     const deleteButtons = document.querySelectorAll('.btn-eliminar');
     deleteButtons.forEach(btn => {
         btn.addEventListener('click', function() {

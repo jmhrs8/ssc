@@ -4,6 +4,8 @@ require_once 'includes/header.php';
 $mensajeExito = '';
 $mensajeError = '';
 
+$dirComprobantes = __DIR__ . '/uploads/comprobantes_ingresos/';
+
 // --- PROCESAR ELIMINACIÓN DE REGISTRO ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar'])) {
     $idEliminar = intval($_POST['registro_id'] ?? 0);
@@ -12,19 +14,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar'])) {
     if ($idEliminar > 0) {
         try {
             $pdo->beginTransaction();
+
             if ($origen === 'ingreso') {
+                // Borrar archivo adjunto si existe
+                $stmtImg = $pdo->prepare("SELECT comprobante_url FROM ingresos WHERE id = ?");
+                $stmtImg->execute([$idEliminar]);
+                $archivo = $stmtImg->fetchColumn();
+
+                if ($archivo && file_exists(__DIR__ . '/' . $archivo)) {
+                    @unlink(__DIR__ . '/' . $archivo);
+                }
+
                 $stmtDel = $pdo->prepare("DELETE FROM ingresos WHERE id = ?");
                 $stmtDel->execute([$idEliminar]);
+
             } else if ($origen === 'salida') {
-                // Eliminar registros de detalles primero y luego el encabezado de salida
+                // 1. Reintegrar el inventario de las mercancías vendidas en esta salida
+                $stmtDet = $pdo->prepare("SELECT producto_id, cantidad FROM detalle_salidas WHERE salida_id = ?");
+                $stmtDet->execute([$idEliminar]);
+                $detalles = $stmtDet->fetchAll(PDO::FETCH_ASSOC);
+
+                $stmtRestaurar = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual + ? WHERE id = ?");
+                foreach ($detalles as $item) {
+                    $stmtRestaurar->execute([$item['cantidad'], $item['producto_id']]);
+                }
+
+                // 2. Eliminar archivo adjunto de la venta si existe
+                $stmtImg = $pdo->prepare("SELECT factura_url FROM salidas WHERE id = ?");
+                $stmtImg->execute([$idEliminar]);
+                $archivo = $stmtImg->fetchColumn();
+
+                if ($archivo && file_exists(__DIR__ . '/' . $archivo)) {
+                    @unlink(__DIR__ . '/' . $archivo);
+                }
+
+                // 3. Eliminar detalle y registro de salida
                 $stmtDelDet = $pdo->prepare("DELETE FROM detalle_salidas WHERE salida_id = ?");
                 $stmtDelDet->execute([$idEliminar]);
 
                 $stmtDelSal = $pdo->prepare("DELETE FROM salidas WHERE id = ?");
                 $stmtDelSal->execute([$idEliminar]);
             }
+
             $pdo->commit();
-            $mensajeExito = "El registro #{$idEliminar} ({$origen}) fue eliminado correctamente.";
+            $mensajeExito = "El registro #{$idEliminar} ({$origen}) fue eliminado correctamente y el stock fue ajustado.";
         } catch (\PDOException $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -34,47 +67,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar'])) {
     }
 }
 
-// --- PROCESAR EDICIÓN DE REGISTRO ---
+// --- PROCESAR EDICIÓN Y CARGA DE BÁUCHER / COMPROBANTE ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar'])) {
-    $idEditar   = intval($_POST['registro_id'] ?? 0);
-    $origen     = $_POST['origen'] ?? '';
-    $concepto   = trim($_POST['concepto'] ?? '');
-    $metodoPago = $_POST['metodo_pago'] ?? 'efectivo';
-    $montoTotal = floatval($_POST['monto_total'] ?? 0);
-    $requiereIva= isset($_POST['calcular_iva']) ? 1 : 0;
+    $idEditar    = intval($_POST['registro_id'] ?? 0);
+    $origen      = $_POST['origen'] ?? '';
+    $concepto    = trim($_POST['concepto'] ?? '');
+    $metodoPago  = $_POST['metodo_pago'] ?? 'efectivo';
+    $montoTotal  = floatval($_POST['monto_total'] ?? 0);
+    $fecha       = $_POST['fecha'] ?? '';
+    $requiereIva = isset($_POST['calcular_iva']) ? 1 : 0;
 
     if ($idEditar > 0 && !empty($concepto) && $montoTotal >= 0) {
         try {
             $subtotal = $requiereIva ? ($montoTotal / 1.16) : $montoTotal;
             $iva      = $requiereIva ? ($montoTotal - $subtotal) : 0.00;
 
-            if ($origen === 'ingreso') {
-                $stmtUpd = $pdo->prepare("UPDATE ingresos SET 
-                            concepto = ?, 
-                            metodo_pago = ?, 
-                            monto_subtotal = ?, 
-                            monto_iva = ?, 
-                            monto_total = ? 
-                          WHERE id = ?");
-                $stmtUpd->execute([$concepto, $metodoPago, $subtotal, $iva, $montoTotal, $idEditar]);
-            } else if ($origen === 'salida') {
-                // Limpia el prefijo 'Venta #X - ' en caso de que viniera en el string del modal
-                $clienteLimpio = preg_replace('/^Venta #\d+ - /', '', $concepto);
+            // Procesar subida de báucher / factura / evidencia
+            $comprobanteUrl = null;
+            if (!empty($_FILES['comprobante']['name']) && $_FILES['comprobante']['error'] === UPLOAD_ERR_OK) {
+                $file = $_FILES['comprobante'];
+                $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                $extsPermitidas = ['pdf', 'xml', 'jpg', 'jpeg', 'png', 'webp'];
 
-                $stmtUpd = $pdo->prepare("UPDATE salidas SET 
-                            cliente = ?, 
-                            metodo_cobro = ?, 
-                            metodo_pago = ?, 
-                            subtotal = ?, 
-                            iva = ?, 
-                            total = ?, 
-                            monto_total = ? 
-                          WHERE id = ?");
-                $stmtUpd->execute([$clienteLimpio, $metodoPago, $metodoPago, $subtotal, $iva, $montoTotal, $montoTotal, $idEditar]);
+                if (in_array($ext, $extsPermitidas)) {
+                    if (!is_dir($dirComprobantes)) {
+                        mkdir($dirComprobantes, 0755, true);
+                    }
+                    $nombreArchivo = 'ingreso_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                    $destino = $dirComprobantes . $nombreArchivo;
+
+                    if (move_uploaded_file($file['tmp_name'], $destino)) {
+                        $comprobanteUrl = 'uploads/comprobantes_ingresos/' . $nombreArchivo;
+                    }
+                }
             }
 
+            $pdo->beginTransaction();
+
+            if ($origen === 'ingreso') {
+                $sqlUpd = "UPDATE ingresos SET
+                            concepto = ?,
+                            metodo_pago = ?,
+                            monto_subtotal = ?,
+                            monto_iva = ?,
+                            monto_total = ?";
+                $params = [$concepto, $metodoPago, $subtotal, $iva, $montoTotal];
+
+                if (!empty($fecha)) {
+                    $sqlUpd .= ", fecha_ingreso = ?";
+                    $params[] = $fecha;
+                }
+
+                if ($comprobanteUrl) {
+                    $sqlUpd .= ", comprobante_url = ?";
+                    $params[] = $comprobanteUrl;
+                }
+
+                $sqlUpd .= " WHERE id = ?";
+                $params[] = $idEditar;
+
+                $stmtUpd = $pdo->prepare($sqlUpd);
+                $stmtUpd->execute($params);
+
+            } else if ($origen === 'salida') {
+                $clienteLimpio = preg_replace('/^Venta #\d+ - /', '', $concepto);
+
+                $sqlUpd = "UPDATE salidas SET
+                            cliente = ?,
+                            metodo_cobro = ?,
+                            metodo_pago = ?,
+                            subtotal = ?,
+                            iva = ?,
+                            total = ?,
+                            monto_total = ?";
+                $params = [$clienteLimpio, $metodoPago, $metodoPago, $subtotal, $iva, $montoTotal, $montoTotal];
+
+                if (!empty($fecha)) {
+                    $sqlUpd .= ", fecha = ?";
+                    $params[] = $fecha;
+                }
+
+                if ($comprobanteUrl) {
+                    $sqlUpd .= ", factura_url = ?";
+                    $params[] = $comprobanteUrl;
+                }
+
+                $sqlUpd .= " WHERE id = ?";
+                $params[] = $idEditar;
+
+                $stmtUpd = $pdo->prepare($sqlUpd);
+                $stmtUpd->execute($params);
+            }
+
+            $pdo->commit();
             $mensajeExito = "El registro #{$idEditar} ({$origen}) fue actualizado con éxito.";
         } catch (\PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             $mensajeError = "Error al actualizar el registro: " . $e->getMessage();
         }
     } else {
@@ -82,9 +172,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar'])) {
     }
 }
 
-// --- CONSULTA UNIFICADA SIN LOSS DE MONTOS NI DUPLICACIONES ---
+// --- CONSULTA UNIFICADA ---
 $sqlUnificado = "
-    SELECT 
+    SELECT
         'ingreso' AS origen,
         id,
         fecha_ingreso AS fecha,
@@ -98,15 +188,15 @@ $sqlUnificado = "
 
     UNION ALL
 
-    SELECT 
+    SELECT
         'salida' AS origen,
         s.id,
         s.fecha AS fecha,
         CONCAT('Venta #', s.id, ' - ', COALESCE(s.cliente, 'Público General')) AS concepto,
         COALESCE(s.metodo_cobro, s.metodo_pago, 'efectivo') AS metodo_pago,
         COALESCE(
-            s.subtotal, 
-            IF(COALESCE(s.iva, 0) > 0, COALESCE(s.monto_total, s.total, 0) / 1.16, COALESCE(s.monto_total, s.total, 0)), 
+            s.subtotal,
+            IF(COALESCE(s.iva, 0) > 0, COALESCE(s.monto_total, s.total, 0) / 1.16, COALESCE(s.monto_total, s.total, 0)),
             0.00
         ) AS subtotal,
         COALESCE(s.iva, 0.00) AS iva,
@@ -128,8 +218,8 @@ try {
 // Calcular Totales por Método de Pago
 try {
     $sqlTotales = "
-        SELECT metodo_pago, SUM(total) AS total_metodo 
-        FROM ({$sqlUnificado}) AS reporte_totales 
+        SELECT metodo_pago, SUM(total) AS total_metodo
+        FROM ({$sqlUnificado}) AS reporte_totales
         GROUP BY metodo_pago
     ";
     $totalesMetodo = $pdo->query($sqlTotales)->fetchAll(PDO::FETCH_KEY_PAIR);
@@ -243,20 +333,21 @@ $totalIngresos = array_sum($totalesMetodo);
                                 <td class="text-center">
                                     <div class="btn-group btn-group-sm">
                                         <!-- Botón Editar -->
-                                        <button type="button" class="btn btn-outline-warning" 
-                                                data-bs-toggle="modal" 
+                                        <button type="button" class="btn btn-outline-warning"
+                                                data-bs-toggle="modal"
                                                 data-bs-target="#modalEditarRegistro"
                                                 data-id="<?= $ing['id'] ?>"
                                                 data-origen="<?= $ing['origen'] ?>"
                                                 data-concepto="<?= htmlspecialchars($ing['concepto']) ?>"
                                                 data-metodo="<?= $ing['metodo_pago'] ?>"
                                                 data-total="<?= $ing['total'] ?>"
+                                                data-fecha="<?= !empty($ing['fecha']) ? date('Y-m-d\TH:i', strtotime($ing['fecha'])) : '' ?>"
                                                 data-iva="<?= $ing['iva'] > 0 ? 1 : 0 ?>">
                                             <i class="bi bi-pencil-square"></i>
                                         </button>
 
                                         <!-- Botón Eliminar -->
-                                        <form method="POST" action="ingresos.php" class="d-inline" onsubmit="return confirm('¿Confirmas eliminar este registro de ingreso?');">
+                                        <form method="POST" action="ingresos.php" class="d-inline" onsubmit="return confirm('¿Confirmas eliminar este registro de ingreso? Si es una venta, la mercancía regresará al inventario.');">
                                             <input type="hidden" name="accion_eliminar" value="1">
                                             <input type="hidden" name="registro_id" value="<?= $ing['id'] ?>">
                                             <input type="hidden" name="origen" value="<?= $ing['origen'] ?>">
@@ -279,13 +370,13 @@ $totalIngresos = array_sum($totalesMetodo);
 <div class="modal fade" id="modalEditarRegistro" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="ingresos.php">
+            <form method="POST" action="ingresos.php" enctype="multipart/form-data">
                 <input type="hidden" name="accion_editar" value="1">
                 <input type="hidden" name="registro_id" id="edit_registro_id">
                 <input type="hidden" name="origen" id="edit_origen">
 
                 <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i> Editar Registro de Ingreso</h5>
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i> Editar Registro de Ingreso / Báucher</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
@@ -307,6 +398,17 @@ $totalIngresos = array_sum($totalesMetodo);
                     <div class="col-md-6">
                         <label class="form-label fw-bold">Monto Total ($) (*):</label>
                         <input type="number" step="0.01" min="0" name="monto_total" id="edit_monto_total" class="form-control" required>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Fecha del Movimiento:</label>
+                        <input type="datetime-local" name="fecha" id="edit_fecha" class="form-control">
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Adjuntar / Reemplazar Báucher o Factura:</label>
+                        <input type="file" name="comprobante" class="form-control" accept=".pdf,.xml,.jpg,.jpeg,.png,.webp">
+                        <small class="text-muted">Acepta archivos PDF, XML, JPG, PNG o WEBP.</small>
                     </div>
 
                     <div class="col-12">
@@ -334,12 +436,13 @@ document.addEventListener('DOMContentLoaded', function () {
     if (modalEditar) {
         modalEditar.addEventListener('show.bs.modal', function (event) {
             var button = event.relatedTarget;
-            
+
             document.getElementById('edit_registro_id').value = button.getAttribute('data-id');
             document.getElementById('edit_origen').value = button.getAttribute('data-origen');
             document.getElementById('edit_concepto').value = button.getAttribute('data-concepto');
             document.getElementById('edit_metodo_pago').value = button.getAttribute('data-metodo');
             document.getElementById('edit_monto_total').value = button.getAttribute('data-total');
+            document.getElementById('edit_fecha').value = button.getAttribute('data-fecha') || '';
             document.getElementById('edit_calcular_iva').checked = button.getAttribute('data-iva') === '1';
         });
     }

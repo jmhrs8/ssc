@@ -72,7 +72,7 @@ $bgUrl = !empty($cfg['bg_url']) ? $cfg['bg_url'] : '';
         <?php if (!empty($cfg['logo_url'])): ?>
             <img src="<?= htmlspecialchars($cfg['logo_url']) ?>" style="max-height: 80px;" class="mb-2">
         <?php endif; ?>
-        <h4 class="fw-bold">Sistema de Inventario y Control de Insumos</h4>
+        <h4 class="fw-bold">Control de Inventario, Insumos y Ventas ALISAKA</h4>
     </div>
 
     <?php if ($error): ?>

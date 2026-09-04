@@ -1,5 +1,5 @@
-<?php
-require_once 'includes/header.php';
+<?php 
+require_once 'includes/header.php'; 
 
 // Inicializar variables
 $totalProductos = 0;
@@ -17,22 +17,15 @@ try {
     $alertasStock = $pdo->query("SELECT COUNT(*) FROM productos WHERE stock_actual <= stock_minimo")->fetchColumn() ?? 0;
 } catch (\PDOException $e) {}
 
-// 3. Ingresos Netos Acumulados
+// 3. Ingresos Netos Acumulados (calculado con cantidad * costo_unitario)
 try {
-    $ingresosNetos = $pdo->query("SELECT SUM(monto_total) FROM ingresos")->fetchColumn() ?? 0;
-    if (floatval($ingresosNetos) == 0) {
-        $ingresosNetos = $pdo->query("SELECT SUM(cantidad * costo_unitario) FROM ingresos")->fetchColumn() ?? 0;
-    }
+    $ingresosNetos = $pdo->query("SELECT SUM(cantidad * costo_unitario) FROM ingresos")->fetchColumn() ?? 0;
 } catch (\PDOException $e) {}
 
-// 4. Por Pagar a Proveedores (Cuentas por Pagar con estatus 'pendiente')
+// 4. Cuentas por Pagar Pendientes
 try {
-    $cuentasPend = $pdo->query("SELECT SUM(monto) FROM cuentas_pagar WHERE LOWER(estatus) = 'pendiente'")->fetchColumn() ?? 0;
-} catch (\PDOException $e) {
-    $cuentasPend = 0;
-}
-
-$cuentasPend = floatval($cuentasPend);
+    $cuentasPend = $pdo->query("SELECT SUM(monto_total - monto_pagado) FROM cuentas_por_pagar WHERE estado != 'liquidado'")->fetchColumn() ?? 0;
+} catch (\PDOException $e) {}
 ?>
 
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">

@@ -15,7 +15,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_producto']))
 
     if ($idEliminar > 0) {
         try {
-            // Consultar si tiene imagen para borrarla si no es la default
             $stmtImg = $pdo->prepare("SELECT imagen FROM productos WHERE id = ?");
             $stmtImg->execute([$idEliminar]);
             $prod = $stmtImg->fetch(PDO::FETCH_ASSOC);
@@ -27,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_producto']))
                 }
             }
 
-            // Eliminar producto de la BDD
             $stmtDel = $pdo->prepare("DELETE FROM productos WHERE id = ?");
             $stmtDel->execute([$idEliminar]);
 
@@ -53,20 +51,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['modificar_producto'])
 
     if ($idEditar > 0 && !empty($codigo) && !empty($nombre)) {
         try {
-            // Obtener datos actuales
             $stmtActual = $pdo->prepare("SELECT imagen FROM productos WHERE id = ?");
             $stmtActual->execute([$idEditar]);
             $prodActual = $stmtActual->fetch(PDO::FETCH_ASSOC);
             $fotoUrl = $prodActual['imagen'] ?? 'uploads/productos/default.png';
 
-            // Actualizar fotografía si se subió una nueva
             if (!empty($_FILES['fotografia']['name'])) {
                 if (!is_dir($dirFotos)) mkdir($dirFotos, 0755, true);
                 $ext = strtolower(pathinfo($_FILES['fotografia']['name'], PATHINFO_EXTENSION));
                 if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) {
                     $nomFoto = 'prod_' . time() . '_' . uniqid() . '.' . $ext;
                     if (move_uploaded_file($_FILES['fotografia']['tmp_name'], $dirFotos . $nomFoto)) {
-                        // Eliminar imagen anterior si no es la por defecto
                         if (!empty($fotoUrl) && $fotoUrl !== 'uploads/productos/default.png') {
                             @unlink(__DIR__ . '/' . $fotoUrl);
                         }
@@ -88,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['modificar_producto'])
 }
 
 // =========================================================================
-// 3. REGISTRAR NUEVO PRODUCTO + PRIMERA ENTRADA (COMPRA)
+// 3. REGISTRAR NUEVO PRODUCTO + PRIMERA ENTRADA (COMPRA CON FORMA DE PAGO)
 // =========================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_producto_completo'])) {
     $codigo        = trim($_POST['codigo'] ?? '');
@@ -100,10 +95,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_producto_comp
     $stockInicial  = floatval($_POST['stock_inicial'] ?? 0);
 
     $proveedorId     = !empty($_POST['proveedor_id']) ? intval($_POST['proveedor_id']) : null;
-    $estatusPago     = $_POST['estatus_pago'] ?? 'pagado';
+    $estatusPago      = $_POST['estatus_pago'] ?? 'pagado';
+    $metodoPago      = $_POST['metodo_pago'] ?? 'efectivo';
     $fechaVencimiento= !empty($_POST['fecha_vencimiento']) ? $_POST['fecha_vencimiento'] : null;
     $tipoComprobante = $_POST['tipo_comprobante'] ?? 'sin_comprobante';
-    $montoTotal      = $stockInicial * $costoUnitario;
+
+    // CÁLCULO DE MONTO TOTAL CON IVA SI ES FACTURA
+    $subtotal = $stockInicial * $costoUnitario;
+    $montoIva = ($tipoComprobante === 'factura') ? ($subtotal * 0.16) : 0.00;
+    $montoTotal = $subtotal + $montoIva;
 
     $fotoUrl = 'uploads/productos/default.png';
     $comprobanteUrl = null;
@@ -112,6 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_producto_comp
         try {
             $pdo->beginTransaction();
 
+            // Guardar Fotografía
             if (!empty($_FILES['fotografia']['name'])) {
                 if (!is_dir($dirFotos)) mkdir($dirFotos, 0755, true);
                 $ext = strtolower(pathinfo($_FILES['fotografia']['name'], PATHINFO_EXTENSION));
@@ -123,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_producto_comp
                 }
             }
 
+            // Guardar Comprobante
             if (!empty($_FILES['comprobante']['name'])) {
                 if (!is_dir($dirFacturas)) mkdir($dirFacturas, 0755, true);
                 $ext = strtolower(pathinfo($_FILES['comprobante']['name'], PATHINFO_EXTENSION));
@@ -134,10 +136,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_producto_comp
                 }
             }
 
+            // 1. Insertar Producto
             $stmtProd = $pdo->prepare("INSERT INTO productos (codigo, nombre, tipo_unidad, costo_unitario, precio_venta, stock_actual, stock_minimo, imagen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             $stmtProd->execute([$codigo, $nombre, $tipoUnidad, $costoUnitario, $precioVenta, $stockInicial, $stockMinimo, $fotoUrl]);
             $productoId = $pdo->lastInsertId();
 
+            // 2. Insertar Entrada y Cuentas/Egresos
             if ($stockInicial > 0) {
                 $fechaPago = ($estatusPago === 'pagado') ? date('Y-m-d H:i:s') : null;
 
@@ -147,8 +151,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_producto_comp
 
                 if ($estatusPago === 'pagado') {
                     $concepto = "Compra inicial: {$stockInicial} unid. de {$nombre}";
-                    $stmtEgr = $pdo->prepare("INSERT INTO egresos (entrada_id, proveedor_id, concepto, monto, metodo_pago, tipo_comprobante, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, 'efectivo', ?, ?, NOW())");
-                    $stmtEgr->execute([$entradaId, $proveedorId, $concepto, $montoTotal, $tipoComprobante, $comprobanteUrl]);
+                    $stmtEgr = $pdo->prepare("INSERT INTO egresos (entrada_id, proveedor_id, concepto, monto, metodo_pago, tipo_comprobante, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+                    $stmtEgr->execute([$entradaId, $proveedorId, $concepto, $montoTotal, $metodoPago, $tipoComprobante, $comprobanteUrl]);
                 } else {
                     $concepto = "Compra a crédito (inicial): {$stockInicial} unid. de {$nombre}";
                     $stmtCxP = $pdo->prepare("INSERT INTO cuentas_pagar (entrada_id, proveedor_id, concepto, monto, estatus, comprobante_url, fecha_vencimiento) VALUES (?, ?, ?, ?, 'pendiente', ?, ?)");
@@ -167,14 +171,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_producto_comp
     }
 }
 
-// Cargar Proveedores para el desplegable
+// Cargar Proveedores
 try {
     $proveedores = $pdo->query("SELECT id, nombre FROM proveedores ORDER BY nombre ASC")->fetchAll(PDO::FETCH_ASSOC);
 } catch (\PDOException $e) {
     $proveedores = [];
 }
 
-// Cargar Productos para el listado
+// Cargar Productos
 try {
     $productos = $pdo->query("SELECT * FROM productos ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
 } catch (\PDOException $e) {
@@ -249,8 +253,8 @@ try {
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <button class="btn btn-sm btn-warning me-1" 
-                                            onclick='abrirModalEditar(<?= json_encode($p, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' 
+                                    <button class="btn btn-sm btn-warning me-1"
+                                            onclick='abrirModalEditar(<?= json_encode($p, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'
                                             title="Editar producto">
                                         <i class="bi bi-pencil-square"></i>
                                     </button>
@@ -402,11 +406,20 @@ try {
                         </div>
                         <div class="col-md-3">
                             <label class="form-label fw-bold">Stock Inicial (Cantidad):</label>
-                            <input type="number" step="0.01" min="0" name="stock_inicial" class="form-control" value="0" required>
+                            <input type="number" step="0.01" min="0" name="stock_inicial" id="stock_inicial" class="form-control" value="0" oninput="calcularTotalesCompra()" required>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label fw-bold">Costo Unitario ($):</label>
-                            <input type="number" step="0.01" min="0" name="costo_unitario" class="form-control" value="0.00" required>
+                            <input type="number" step="0.01" min="0" name="costo_unitario" id="costo_unitario" class="form-control" value="0.00" oninput="calcularTotalesCompra()" required>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Tipo Comprobante:</label>
+                            <select name="tipo_comprobante" id="tipo_comprobante" class="form-select" onchange="calcularTotalesCompra()">
+                                <option value="sin_comprobante">Sin Comprobante / Nota</option>
+                                <option value="factura">Factura Fiscal (CFDI + 16% IVA)</option>
+                                <option value="remision">Nota de Remisión / Ticket</option>
+                            </select>
                         </div>
 
                         <div class="col-md-4">
@@ -417,18 +430,38 @@ try {
                             </select>
                         </div>
 
+                        <div class="col-md-4" id="divMetodoPago">
+                            <label class="form-label fw-bold">Forma de Pago:</label>
+                            <select name="metodo_pago" class="form-select">
+                                <option value="efectivo">Efectivo</option>
+                                <option value="tarjeta">Tarjeta (Débito / Crédito)</option>
+                                <option value="transferencia">Transferencia Bancaria</option>
+                            </select>
+                        </div>
+
                         <div class="col-md-4" id="divFechaVencimiento" style="display: none;">
                             <label class="form-label fw-bold text-danger">Promesa de Pago (Vencimiento):</label>
                             <input type="date" name="fecha_vencimiento" class="form-control border-danger">
                         </div>
 
-                        <div class="col-md-4">
-                            <label class="form-label fw-bold">Tipo Comprobante:</label>
-                            <select name="tipo_comprobante" class="form-select">
-                                <option value="sin_comprobante">Sin Comprobante / Nota</option>
-                                <option value="factura">Factura Fiscal (CFDI)</option>
-                                <option value="remision">Nota de Remisión / Ticket</option>
-                            </select>
+                        <!-- DESGLOSE DINÁMICO DE TOTALES -->
+                        <div class="col-md-12">
+                            <div class="p-3 bg-light rounded border">
+                                <div class="row text-center">
+                                    <div class="col-md-4">
+                                        <small class="text-muted d-block fw-bold">SUBTOTAL</small>
+                                        <span id="lbl_subtotal" class="fs-6 fw-bold text-dark">$0.00</span>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted d-block fw-bold">IVA (16%)</small>
+                                        <span id="lbl_iva" class="fs-6 fw-bold text-warning">$0.00</span>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted d-block fw-bold">TOTAL COMPRA</small>
+                                        <span id="lbl_total" class="fs-5 fw-bold text-success">$0.00</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="col-md-12">
@@ -452,11 +485,34 @@ try {
 <script>
 function toggleCreditoCampos(val) {
     const divVenc = document.getElementById('divFechaVencimiento');
+    const divMetodo = document.getElementById('divMetodoPago');
+    
     if (val === 'pendiente') {
         divVenc.style.display = 'block';
+        divMetodo.style.display = 'none';
     } else {
         divVenc.style.display = 'none';
+        divMetodo.style.display = 'block';
     }
+}
+
+function calcularTotalesCompra() {
+    const cant = parseFloat(document.getElementById('stock_inicial').value) || 0;
+    const costo = parseFloat(document.getElementById('costo_unitario').value) || 0;
+    const tipoComp = document.getElementById('tipo_comprobante').value;
+
+    const subtotal = cant * costo;
+    let iva = 0;
+
+    if (tipoComp === 'factura') {
+        iva = subtotal * 0.16;
+    }
+
+    const total = subtotal + iva;
+
+    document.getElementById('lbl_subtotal').innerText = '$' + subtotal.toFixed(2);
+    document.getElementById('lbl_iva').innerText = '$' + iva.toFixed(2);
+    document.getElementById('lbl_total').innerText = '$' + total.toFixed(2);
 }
 
 function abrirModalEditar(prod) {
