@@ -7,9 +7,7 @@ $mensajeError = '';
 // Obtener ID del usuario en sesión
 $usuarioId = $_SESSION['user_id'] ?? $_SESSION['usuario_id'] ?? 1;
 
-// ==========================================
 // 1. REGISTRAR NUEVA SALIDA / VENTA
-// ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
     $productoId      = intval($_POST['producto_id'] ?? 0);
     $clienteNombre   = !empty(trim($_POST['cliente'] ?? '')) ? trim($_POST['cliente']) : 'Público General';
@@ -47,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
                 if (in_array($ext, $permitidas)) {
                     $dirSubida = 'uploads/ventas/';
                     if (!is_dir($dirSubida)) {
-                        mkdir($dirSubida, 0755, true);
+                        mkdir($dirSubida, 0777, true);
                     }
                     $nombreArchivo = 'salida_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $facturaUrl = $dirSubida . $nombreArchivo;
@@ -55,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
                 }
             }
 
-            // Cálculo de IVA y Total
+            // --- LÓGICA DE CÁLCULO DE IVA Y TOTAL ---
             $subtotal = $cantidad * $precioVenta;
             $iva = $requiereFactura ? ($subtotal * 0.16) : 0.00;
             $total = $subtotal + $iva;
@@ -97,35 +95,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
                 $subtotal
             ]);
 
-            // Descontar inventario
+            // Descontar inventario de la columna stock_actual
             $stmtUpdStk = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual - ? WHERE id = ?");
             $stmtUpdStk->execute([$cantidad, $productoId]);
 
-            // MANEJO FINANCIERO (Evita duplicados)
+            // Registrar en INGRESOS
             if ($estadoCobro === 'cobrado') {
-                // De Contado -> Genera INGRESOS únicamente
                 $conceptoIngreso = "Venta / Salida #" . $salidaId . " - " . $producto['nombre'] . " (" . $clienteNombre . ")" . ($requiereFactura ? " [Facturado 16% IVA]" : "");
                 try {
-                    $stmtIng = $pdo->prepare("INSERT INTO ingresos (salida_id, concepto, monto_total, metodo_pago, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, ?, NOW())");
-                    $stmtIng->execute([$salidaId, $conceptoIngreso, $total, $metodoCobro, $facturaUrl]);
-                } catch (\PDOException $exIng1) {
                     $stmtIng = $pdo->prepare("INSERT INTO ingresos (concepto, monto_total, metodo_pago, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, NOW())");
                     $stmtIng->execute([$conceptoIngreso, $total, $metodoCobro, $facturaUrl]);
+                } catch (\PDOException $exIng1) {
+                    try {
+                        $stmtIng = $pdo->prepare("INSERT INTO ingresos (concepto, total, metodo_pago, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, NOW())");
+                        $stmtIng->execute([$conceptoIngreso, $total, $metodoCobro, $facturaUrl]);
+                    } catch (\PDOException $exIng2) {
+                        // Salta si hay inconsistencia estructural opcional
+                    }
                 }
-            } else {
-                // A Crédito -> Genera CUENTAS POR COBRAR únicamente
+            }
+
+            // Registrar en CUENTAS_COBRAR
+            if ($estadoCobro === 'credito') {
                 $conceptoCxC = "Venta #" . $salidaId . ": " . $producto['nombre'] . ($requiereFactura ? " [Facturado 16% IVA]" : "");
                 try {
-                    $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar (salida_id, cliente, concepto, monto_total, estatus, comprobante_url, fecha_registro) VALUES (?, ?, ?, ?, 'pendiente', ?, NOW())");
-                    $stmtCxC->execute([$salidaId, $clienteNombre, $conceptoCxC, $total, $facturaUrl]);
-                } catch (\PDOException $exCxC1) {
                     $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar (cliente, concepto, monto_total, estatus, comprobante_url, fecha_registro) VALUES (?, ?, ?, 'pendiente', ?, NOW())");
                     $stmtCxC->execute([$clienteNombre, $conceptoCxC, $total, $facturaUrl]);
+                } catch (\PDOException $exCxC1) {
+                    try {
+                        $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar (cliente, concepto, monto, estatus, comprobante_url, fecha_registro) VALUES (?, ?, ?, 'pendiente', ?, NOW())");
+                        $stmtCxC->execute([$clienteNombre, $conceptoCxC, $total, $facturaUrl]);
+                    } catch (\PDOException $exCxC2) {
+                        // Salta si hay inconsistencia estructural opcional
+                    }
                 }
             }
 
             $pdo->commit();
-            $mensajeExito = "Salida / Venta #" . $salidaId . " registrada exitosamente. Total: $" . number_format($total, 2);
+            $mensajeExito = "Salida / Venta #" . $salidaId . " registrada exitosamente. Total cobrado/registrado: $" . number_format($total, 2);
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -137,9 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_salida'])) {
     }
 }
 
-// ==========================================
 // 2. PROCESAR EDICIÓN DE SALIDA / VENTA
-// ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar_salida'])) {
     $salidaId        = intval($_POST['salida_id'] ?? 0);
     $clienteNombre   = !empty(trim($_POST['cliente'] ?? '')) ? trim($_POST['cliente']) : 'Público General';
@@ -171,11 +176,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar_salida'
                     $stockDisp = floatval($stmtStk->fetchColumn() ?? 0);
 
                     if ($stockDisp < $diferenciaCant) {
-                        throw new Exception("Stock insuficiente para aumentar la venta. Disponible: " . number_format($stockDisp, 2));
+                        throw new Exception("Stock insuficiente para aumentar la venta. Stock actual disponible: " . number_format($stockDisp, 2));
                     }
                 }
 
-                // Actualizar inventario
+                // Actualizar inventario según la diferencia
                 $stmtAdjStk = $pdo->prepare("UPDATE productos SET stock_actual = stock_actual - ? WHERE id = ?");
                 $stmtAdjStk->execute([$diferenciaCant, $productoId]);
 
@@ -192,10 +197,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar_salida'
             $totalNuevo = $subtotalNuevo + $ivaNuevo;
             $tipoPago   = ($estadoCobro === 'credito') ? 'credito' : 'contado';
 
-            // Comprobante
-            $stmtFile = $pdo->prepare("SELECT factura_url FROM salidas WHERE id = ?");
-            $stmtFile->execute([$salidaId]);
-            $facturaUrl = $stmtFile->fetchColumn();
+            // Manejo de archivo/comprobante
+            $sqlComprobante = "";
+            $paramsComprobante = [];
 
             if (isset($_FILES['comprobante']) && $_FILES['comprobante']['error'] === UPLOAD_ERR_OK) {
                 $ext = strtolower(pathinfo($_FILES['comprobante']['name'], PATHINFO_EXTENSION));
@@ -204,29 +208,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar_salida'
                 if (in_array($ext, $permitidas)) {
                     $dirSubida = 'uploads/ventas/';
                     if (!is_dir($dirSubida)) {
-                        mkdir($dirSubida, 0755, true);
+                        mkdir($dirSubida, 0777, true);
                     }
 
-                    if ($facturaUrl && file_exists(__DIR__ . '/' . $facturaUrl)) {
-                        @unlink(__DIR__ . '/' . $facturaUrl);
+                    // Borrar anterior si existe
+                    $stmtFile = $pdo->prepare("SELECT factura_url FROM salidas WHERE id = ?");
+                    $stmtFile->execute([$salidaId]);
+                    $oldFile = $stmtFile->fetchColumn();
+                    if ($oldFile && file_exists(__DIR__ . '/' . $oldFile)) {
+                        @unlink(__DIR__ . '/' . $oldFile);
                     }
 
                     $nombreArchivo = 'salida_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $facturaUrl = $dirSubida . $nombreArchivo;
-                    move_uploaded_file($_FILES['comprobante']['tmp_name'], $facturaUrl);
+                    if (move_uploaded_file($_FILES['comprobante']['tmp_name'], $facturaUrl)) {
+                        $sqlComprobante = ", factura_url = ?";
+                        $paramsComprobante[] = $facturaUrl;
+                    }
                 }
             }
 
             // Actualizar encabezado de Salida
             $sqlSalida = "UPDATE salidas SET
-                cliente = ?, subtotal = ?, iva = ?, total = ?, monto_total = ?,
-                estado_cobro = ?, metodo_cobro = ?, requiere_factura = ?, con_factura = ?,
-                tipo_pago = ?, metodo_pago = ?, factura_url = ?";
+                cliente = ?,
+                subtotal = ?,
+                iva = ?,
+                total = ?,
+                monto_total = ?,
+                estado_cobro = ?,
+                metodo_cobro = ?,
+                requiere_factura = ?,
+                con_factura = ?,
+                tipo_pago = ?,
+                metodo_pago = ?";
 
             $paramsSalida = [
-                $clienteNombre, $subtotalNuevo, $ivaNuevo, $totalNuevo, $totalNuevo,
-                $estadoCobro, $metodoCobro, $requiereFactura, $requiereFactura,
-                $tipoPago, $metodoCobro, $facturaUrl
+                $clienteNombre,
+                $subtotalNuevo,
+                $ivaNuevo,
+                $totalNuevo,
+                $totalNuevo,
+                $estadoCobro,
+                $metodoCobro,
+                $requiereFactura,
+                $requiereFactura,
+                $tipoPago,
+                $metodoCobro
             ];
 
             if (!empty($fecha)) {
@@ -234,40 +261,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar_salida'
                 $paramsSalida[] = $fecha;
             }
 
+            if (!empty($sqlComprobante)) {
+                $sqlSalida .= $sqlComprobante;
+                $paramsSalida = array_merge($paramsSalida, $paramsComprobante);
+            }
+
             $sqlSalida .= " WHERE id = ?";
             $paramsSalida[] = $salidaId;
 
             $stmtUpdSal = $pdo->prepare($sqlSalida);
             $stmtUpdSal->execute($paramsSalida);
-
-            // Obtener nombre producto
-            $stmtP = $pdo->prepare("SELECT nombre FROM productos WHERE id = ?");
-            $stmtP->execute([$productoId ?? 0]);
-            $prodNom = $stmtP->fetchColumn() ?: 'Producto';
-
-            // Limpieza de vínculos previos
-            try { $pdo->prepare("DELETE FROM ingresos WHERE salida_id = ?")->execute([$salidaId]); } catch (\PDOException $e) {}
-            try { $pdo->prepare("DELETE FROM cuentas_cobrar WHERE salida_id = ?")->execute([$salidaId]); } catch (\PDOException $e) {}
-
-            if ($estadoCobro === 'cobrado') {
-                $conceptoIngreso = "Venta / Salida #" . $salidaId . " - " . $prodNom . " (" . $clienteNombre . ")" . ($requiereFactura ? " [Facturado 16% IVA]" : "");
-                try {
-                    $stmtIng = $pdo->prepare("INSERT INTO ingresos (salida_id, concepto, monto_total, metodo_pago, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, ?, NOW())");
-                    $stmtIng->execute([$salidaId, $conceptoIngreso, $totalNuevo, $metodoCobro, $facturaUrl]);
-                } catch (\PDOException $exIng) {
-                    $stmtIng = $pdo->prepare("INSERT INTO ingresos (concepto, monto_total, metodo_pago, comprobante_url, fecha_pago) VALUES (?, ?, ?, ?, NOW())");
-                    $stmtIng->execute([$conceptoIngreso, $totalNuevo, $metodoCobro, $facturaUrl]);
-                }
-            } else {
-                $conceptoCxC = "Venta #" . $salidaId . ": " . $prodNom . ($requiereFactura ? " [Facturado 16% IVA]" : "");
-                try {
-                    $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar (salida_id, cliente, concepto, monto_total, estatus, comprobante_url, fecha_registro) VALUES (?, ?, ?, ?, 'pendiente', ?, NOW())");
-                    $stmtCxC->execute([$salidaId, $clienteNombre, $conceptoCxC, $totalNuevo, $facturaUrl]);
-                } catch (\PDOException $exCxC) {
-                    $stmtCxC = $pdo->prepare("INSERT INTO cuentas_cobrar (cliente, concepto, monto_total, estatus, comprobante_url, fecha_registro) VALUES (?, ?, ?, 'pendiente', ?, NOW())");
-                    $stmtCxC->execute([$clienteNombre, $conceptoCxC, $totalNuevo, $facturaUrl]);
-                }
-            }
 
             $pdo->commit();
             $mensajeExito = "La salida #{$salidaId} fue actualizada exitosamente.";
@@ -282,9 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar_salida'
     }
 }
 
-// ==========================================
 // 3. ELIMINAR REGISTRO DE SALIDA / VENTA
-// ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar_salida'])) {
     $salidaId = intval($_POST['salida_id'] ?? 0);
 
@@ -292,7 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar_salid
         try {
             $pdo->beginTransaction();
 
-            // Reintegrar stock
+            // 1. Reintegrar stock de los productos de la salida
             $stmtDet = $pdo->prepare("SELECT producto_id, cantidad FROM detalle_salidas WHERE salida_id = ?");
             $stmtDet->execute([$salidaId]);
             $detalles = $stmtDet->fetchAll(PDO::FETCH_ASSOC);
@@ -302,7 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar_salid
                 $stmtRestaurar->execute([$item['cantidad'], $item['producto_id']]);
             }
 
-            // Archivo
+            // 2. Eliminar archivo adjunto si existe
             $stmtImg = $pdo->prepare("SELECT factura_url FROM salidas WHERE id = ?");
             $stmtImg->execute([$salidaId]);
             $archivo = $stmtImg->fetchColumn();
@@ -311,16 +312,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar_salid
                 @unlink(__DIR__ . '/' . $archivo);
             }
 
-            // Limpiar Ingresos y CxC
-            try { $pdo->prepare("DELETE FROM ingresos WHERE salida_id = ?")->execute([$salidaId]); } catch (\PDOException $e) {}
-            try { $pdo->prepare("DELETE FROM cuentas_cobrar WHERE salida_id = ?")->execute([$salidaId]); } catch (\PDOException $e) {}
+            // 3. Eliminar detalle y registro
+            $stmtDelDet = $pdo->prepare("DELETE FROM detalle_salidas WHERE salida_id = ?");
+            $stmtDelDet->execute([$salidaId]);
 
-            // Eliminar detalle y registro
-            $pdo->prepare("DELETE FROM detalle_salidas WHERE salida_id = ?")->execute([$salidaId]);
-            $pdo->prepare("DELETE FROM salidas WHERE id = ?")->execute([$salidaId]);
+            $stmtDelSal = $pdo->prepare("DELETE FROM salidas WHERE id = ?");
+            $stmtDelSal->execute([$salidaId]);
 
             $pdo->commit();
-            $mensajeExito = "La salida #{$salidaId} fue eliminada y el stock fue reincorporado.";
+            $mensajeExito = "La salida #{$salidaId} fue eliminada y los productos regresaron al inventario.";
         } catch (\PDOException $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -403,6 +403,7 @@ try {
                     <?php endif; ?>
                 </select>
 
+                <!-- TARJETA VISUAL DE STOCK Y DETALLES -->
                 <div id="card_info_stock" class="card mt-2 d-none border-primary bg-light">
                     <div class="card-body p-2 text-center">
                         <small class="text-muted d-block fw-bold mb-1">DISPONIBILIDAD EN ALMACÉN</small>
@@ -462,6 +463,7 @@ try {
                 </div>
             </div>
 
+            <!-- Previsualización de Totales en Tiempo Real -->
             <div class="col-12 bg-light p-3 rounded border">
                 <div class="row text-center">
                     <div class="col-md-4">
@@ -550,6 +552,7 @@ try {
                                 </td>
                                 <td class="text-center">
                                     <div class="btn-group btn-group-sm">
+                                        <!-- Botón Editar -->
                                         <button type="button" class="btn btn-outline-warning"
                                                 data-bs-toggle="modal"
                                                 data-bs-target="#modalEditarSalida"
@@ -565,6 +568,7 @@ try {
                                             <i class="bi bi-pencil-square"></i>
                                         </button>
 
+                                        <!-- Botón Eliminar -->
                                         <form method="POST" action="salidas.php" class="d-inline" onsubmit="return confirm('¿Confirmas eliminar esta salida #<?= $s['id'] ?>? Las cantidades vendidas regresarán al inventario.');">
                                             <input type="hidden" name="accion_eliminar_salida" value="1">
                                             <input type="hidden" name="salida_id" value="<?= $s['id'] ?>">
@@ -583,7 +587,7 @@ try {
     </div>
 </div>
 
-<!-- MODAL EDITAR SALIDA -->
+<!-- MODAL PARA EDITAR SALIDA -->
 <div class="modal fade" id="modalEditarSalida" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -671,12 +675,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const inputCantidad    = document.getElementById('input_cantidad');
     const chkFactura       = document.getElementById('requiere_factura');
 
+    // Elementos del Card informativo de Stock
     const cardStock        = document.getElementById('card_info_stock');
     const badgeStockStatus = document.getElementById('badge_stock_status');
     const lblStockCant     = document.getElementById('lbl_stock_cant');
     const lblStockUnidad   = document.getElementById('lbl_stock_unidad');
     const lblStockPrecio   = document.getElementById('lbl_stock_precio');
 
+    // Totales de vista previa
     const lblSubtotal      = document.getElementById('lbl_subtotal');
     const lblIva           = document.getElementById('lbl_iva');
     const lblTotal         = document.getElementById('lbl_total');
@@ -703,12 +709,16 @@ document.addEventListener('DOMContentLoaded', function() {
             const unidad = selectedOption.getAttribute('data-unidad') || '';
 
             if (this.value !== "") {
+                // Asignar el precio base
                 inputPrecio.value = precio ? parseFloat(precio).toFixed(2) : '0.00';
+
+                // Mostrar tarjeta informativa
                 cardStock.classList.remove('d-none');
                 lblStockCant.textContent   = stock.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                 lblStockUnidad.textContent = unidad;
                 lblStockPrecio.textContent = '$' + (precio ? parseFloat(precio).toFixed(2) : '0.00');
 
+                // Cambiar el color de la etiqueta según la cantidad de stock
                 if (stock <= 0) {
                     badgeStockStatus.className = 'badge bg-danger fs-6 mb-1';
                 } else if (stock <= 5) {
@@ -729,6 +739,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (inputPrecio)   inputPrecio.addEventListener('input', calcularTotales);
     if (chkFactura)    chkFactura.addEventListener('change', calcularTotales);
 
+    // Llenar Modal de Edición de Salidas
     var modalEditar = document.getElementById('modalEditarSalida');
     if (modalEditar) {
         modalEditar.addEventListener('show.bs.modal', function (event) {
