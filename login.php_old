@@ -4,7 +4,7 @@ session_start();
 $archivo_fondo = "uploads/sistema/fondo_actual.jpg";
 $fondo_url = file_exists($archivo_fondo) ? $archivo_fondo : "";
 
-require_once "config/conexion.php"; // Usamos tu archivo PDO
+require_once "config/conexion.php"; // Usamos tu archivo PDO holis
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
