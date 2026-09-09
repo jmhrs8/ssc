@@ -33,10 +33,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Obtener fondo de pantalla de la configuración
-$stmtCfg = $pdo->query("SELECT logo_url, bg_url FROM configuracion LIMIT 1");
-$cfg = $stmtCfg->fetch();
-$bgUrl = !empty($cfg['bg_url']) ? $cfg['bg_url'] : '';
+// Obtener datos de la empresa/configuración (Con respaldo de tabla)
+try {
+    $stmtCfg = $pdo->query("SELECT logo_url, bg_url FROM configuracion LIMIT 1");
+    $cfg = $stmtCfg->fetch();
+} catch (\PDOException $e) {
+    try {
+        $stmtCfg = $pdo->query("SELECT logo_url, bg_url FROM empresa LIMIT 1");
+        $cfg = $stmtCfg->fetch();
+    } catch (\PDOException $e) {
+        $cfg = [];
+    }
+}
+
+$bgUrl = !empty($cfg['bg_url']) && file_exists(__DIR__ . '/' . $cfg['bg_url']) ? $cfg['bg_url'] : '';
+$logoUrl = !empty($cfg['logo_url']) && file_exists(__DIR__ . '/' . $cfg['logo_url']) ? $cfg['logo_url'] : '';
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -47,8 +58,11 @@ $bgUrl = !empty($cfg['bg_url']) ? $cfg['bg_url'] : '';
     <style>
         body {
             <?php if ($bgUrl): ?>
-            background: url('<?= $bgUrl ?>') no-repeat center center fixed;
-            background-size: cover;
+            background-image: url('<?= htmlspecialchars($bgUrl) ?>?v=<?= filemtime(__DIR__ . '/' . $bgUrl) ?>') !important;
+            background-repeat: no-repeat !important;
+            background-position: center center !important;
+            background-attachment: fixed !important;
+            background-size: cover !important;
             <?php else: ?>
             background-color: #f8f9fa;
             <?php endif; ?>
@@ -69,8 +83,8 @@ $bgUrl = !empty($cfg['bg_url']) ? $cfg['bg_url'] : '';
 <body>
 <div class="card login-card shadow-lg p-4">
     <div class="text-center mb-3">
-        <?php if (!empty($cfg['logo_url'])): ?>
-            <img src="<?= htmlspecialchars($cfg['logo_url']) ?>" style="max-height: 80px;" class="mb-2">
+        <?php if ($logoUrl): ?>
+            <img src="<?= htmlspecialchars($logoUrl) ?>?v=<?= filemtime(__DIR__ . '/' . $logoUrl) ?>" style="max-height: 80px;" class="mb-2">
         <?php endif; ?>
         <h4 class="fw-bold">Control de Inventario, Insumos y Ventas ALISAKA</h4>
     </div>
