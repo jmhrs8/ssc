@@ -392,7 +392,7 @@ try {
                     badgeEstatusTabla = `<span class="badge bg-secondary d-inline-block mt-1" style="font-size:0.65rem;">PENDIENTE</span>`;
                 }
 
-                return `<tr>
+                return `<tr id="registro-${r.id_registro}">
                     <td class="ps-2 fw-bold text-secondary">${r.id_registro}</td>
                     <td>
                         <div class="fw-bold">${r.numero_oficio}</div>
@@ -416,7 +416,30 @@ try {
             }).join('');
             document.getElementById('tbody_registros').innerHTML = html;
             document.getElementById('lbl_total').innerText = 'Total: ' + data.length;
+
+            // EVALUAR PARÁMETROS URL SI SE ACCEDE DESDE EL REPORTE DE FOLIOS
+            evaluarRedireccionAtencion();
         });
+    }
+
+    function evaluarRedireccionAtencion() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const terminoBusqueda = urlParams.get('buscar');
+        const idAtender = urlParams.get('id_atender');
+
+        if (terminoBusqueda && !document.getElementById('txt_buscar').value) {
+            document.getElementById('txt_buscar').value = terminoBusqueda.toUpperCase();
+        }
+
+        if (idAtender) {
+            setTimeout(() => {
+                const filaTarget = document.getElementById('registro-' + idAtender);
+                if (filaTarget) {
+                    filaTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    filaTarget.classList.add('table-warning');
+                }
+            }, 300);
+        }
     }
 
     function visualizarAmbosDocumentos(archivoPdf, archivoConclusion, idFolio) {

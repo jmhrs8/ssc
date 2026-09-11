@@ -35,9 +35,9 @@ try {
         ORDER BY total DESC, u.nombre_completo ASC")->fetchAll(PDO::FETCH_ASSOC);
 
     // 3. Pendientes Inteligentes: Agrupados por usuario asignado con cálculo de antigüedad en días
-    $raw_pendientes = $pdo->query("SELECT 
-            cg.id_registro, 
-            cg.numero_oficio, 
+    $raw_pendientes = $pdo->query("SELECT
+            cg.id_registro,
+            cg.numero_oficio,
             cg.creado_en,
             DATEDIFF(NOW(), cg.creado_en) as dias_rezago,
             COALESCE(u.id_usuario, 0) as id_usuario,
@@ -47,7 +47,7 @@ try {
         WHERE cg.pdf_conclusion IS NULL OR cg.pdf_conclusion = ''
         ORDER BY dias_rezago DESC, cg.id_registro DESC")->fetchAll(PDO::FETCH_ASSOC);
 
-    // Estrcuturar la información por usuario
+    // Estructurar la información por usuario
     $pendientes_por_usuario = [];
     foreach ($raw_pendientes as $p) {
         $id_u = $p['id_usuario'];
@@ -69,15 +69,17 @@ try {
         }
     }
 
-    // 4. Folios capturados por día (Usa 'creado_en')
-    $capturas_diarias = $pdo->query("SELECT
-            DATE(creado_en) as fecha,
-            COUNT(id_registro) as total_capturados
-        FROM control_gestion
-        WHERE creado_en IS NOT NULL
-        GROUP BY DATE(creado_en)
-        ORDER BY fecha ASC
-        LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
+    // 4. Folios capturados por día (SOLUCIÓN: Trae los últimos 30 días hasta HOY)
+    $capturas_diarias = $pdo->query("SELECT * FROM (
+            SELECT
+                DATE(creado_en) as fecha,
+                COUNT(id_registro) as total_capturados
+            FROM control_gestion
+            WHERE creado_en IS NOT NULL
+            GROUP BY DATE(creado_en)
+            ORDER BY fecha DESC
+            LIMIT 30
+        ) sub ORDER BY fecha ASC")->fetchAll(PDO::FETCH_ASSOC);
 
     // 5. Rating de capturas (Basado en creado_por)
     $rating_captura = $pdo->query("SELECT
@@ -140,8 +142,7 @@ foreach ($rating_captura as $rc) {
         .card-metric { border-radius: 8px; border: none; }
         .table-responsive { max-height: 400px; overflow-y: auto; }
         .avatar-rating { width: 32px; height: 32px; object-fit: cover; border-radius: 50%; border: 2px solid #861532; }
-        
-        /* Ajustes y optimización exclusiva para Impresión */
+
         @media print {
             .no-print, nav, .btn { display: none !important; }
             body { background-color: #fff !important; font-size: 10pt; }
@@ -258,7 +259,7 @@ foreach ($rating_captura as $rc) {
     <div class="row g-3 mb-4">
         <div class="col-12">
             <div class="card p-3 shadow-sm bg-white card-metric">
-                <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-calendar-day me-2 text-primary"></i>Histórico de Folios Capturados por Día</h6>
+                <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-calendar-day me-2 text-primary"></i>Histórico de Folios Capturados por Día (Últimos 30 Días)</h6>
                 <div style="position: relative; height: 280px;">
                     <canvas id="graficaDiaria"></canvas>
                 </div>
@@ -271,7 +272,7 @@ foreach ($rating_captura as $rc) {
         <div class="col-12">
             <div class="card p-3 shadow-sm bg-white card-metric">
                 <h6 class="fw-bold text-dark mb-3"><i class="fa-solid fa-triangle-exclamation text-danger me-2"></i>Análisis Segmentado de Pendientes y Rezago por Servidor Público</h6>
-                
+
                 <?php if (empty($pendientes_por_usuario)): ?>
                     <div class="alert alert-success text-center mb-0">No existen folios pendientes en el sistema. 🎉</div>
                 <?php else: ?>
@@ -284,11 +285,11 @@ foreach ($rating_captura as $rc) {
                                         <span class="badge bg-danger fs-6"><?php echo $usr['total_pendientes']; ?> Pendientes</span>
                                     </div>
                                     <div class="small mb-3 text-secondary">
-                                        <strong>Oficio más antiguo/urgente:</strong> 
-                                        <span class="text-dark fw-bold"><?php echo htmlspecialchars($usr['oficio_urgente']); ?></span> 
+                                        <strong>Oficio más antiguo/urgente:</strong>
+                                        <span class="text-dark fw-bold"><?php echo htmlspecialchars($usr['oficio_urgente']); ?></span>
                                         <span class="badge bg-warning text-dark ms-1">(<?php echo $usr['max_rezago']; ?> días de rezago)</span>
                                     </div>
-                                    
+
                                     <div class="table-responsive">
                                         <table class="table table-sm table-hover bg-white border align-middle mb-0" style="font-size:0.8rem;">
                                             <thead class="table-dark">
@@ -305,14 +306,15 @@ foreach ($rating_captura as $rc) {
                                                         <td class="fw-bold"><?php echo htmlspecialchars($item['numero_oficio']); ?></td>
                                                         <td class="text-center"><?php echo date('d/m/Y', strtotime($item['creado_en'])); ?></td>
                                                         <td class="text-center">
-                                                            <?php 
+                                                            <?php
                                                             $dias = (int)$item['dias_rezago'];
                                                             $badge_color = ($dias > 15) ? 'bg-danger' : (($dias > 7) ? 'bg-warning text-dark' : 'bg-info text-dark');
                                                             ?>
                                                             <span class="badge <?php echo $badge_color; ?>"><?php echo $dias; ?> días</span>
                                                         </td>
                                                         <td class="text-center no-print">
-                                                            <a href="index.php?id=<?php echo $item['id_registro']; ?>" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold" style="font-size:0.75rem;">Atender</a>
+                                                            <!-- SOLUCIÓN: Envía parámetro de búsqueda exacta por número de oficio e ID de registro con anclaje -->
+                                                            <a href="index.php?buscar=<?php echo urlencode($item['numero_oficio']); ?>&id_atender=<?php echo $item['id_registro']; ?>#registro-<?php echo $item['id_registro']; ?>" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold" style="font-size:0.75rem;">Atender</a>
                                                         </td>
                                                     </tr>
                                                 <?php endforeach; ?>

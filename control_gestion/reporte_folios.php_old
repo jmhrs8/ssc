@@ -24,6 +24,7 @@ try {
 
     // 2. Carga de trabajo y estatus por Personal Asignado (Atención)
     $personal_stats = $pdo->query("SELECT
+            u.id_usuario,
             u.nombre_completo as empleado,
             SUM(CASE WHEN cg.pdf_conclusion IS NOT NULL AND cg.pdf_conclusion != '' THEN 1 ELSE 0 END) as concluidos,
             SUM(CASE WHEN cg.pdf_conclusion IS NULL OR cg.pdf_conclusion = '' THEN 1 ELSE 0 END) as pendientes,
@@ -33,16 +34,44 @@ try {
         GROUP BY u.id_usuario, u.nombre_completo
         ORDER BY total DESC, u.nombre_completo ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-    // 3. Detalle de la lista general de pendientes
-    $pendientes_lista = $pdo->query("SELECT cg.id_registro, cg.numero_oficio, u.nombre_completo as asignado
+    // 3. Pendientes Inteligentes: Agrupados por usuario asignado con cálculo de antigüedad en días
+    $raw_pendientes = $pdo->query("SELECT 
+            cg.id_registro, 
+            cg.numero_oficio, 
+            cg.creado_en,
+            DATEDIFF(NOW(), cg.creado_en) as dias_rezago,
+            COALESCE(u.id_usuario, 0) as id_usuario,
+            COALESCE(u.nombre_completo, 'SIN ASIGNAR') as asignado
         FROM control_gestion cg
         LEFT JOIN usuarios u ON cg.id_usuario_asignado = u.id_usuario
         WHERE cg.pdf_conclusion IS NULL OR cg.pdf_conclusion = ''
-        ORDER BY cg.id_registro DESC")->fetchAll(PDO::FETCH_ASSOC);
+        ORDER BY dias_rezago DESC, cg.id_registro DESC")->fetchAll(PDO::FETCH_ASSOC);
+
+    // Estrcuturar la información por usuario
+    $pendientes_por_usuario = [];
+    foreach ($raw_pendientes as $p) {
+        $id_u = $p['id_usuario'];
+        if (!isset($pendientes_por_usuario[$id_u])) {
+            $pendientes_por_usuario[$id_u] = [
+                'nombre' => $p['asignado'],
+                'total_pendientes' => 0,
+                'max_rezago' => 0,
+                'oficio_urgente' => '',
+                'listado' => []
+            ];
+        }
+        $pendientes_por_usuario[$id_u]['total_pendientes']++;
+        $pendientes_por_usuario[$id_u]['listado'][] = $p;
+
+        if ($p['dias_rezago'] >= $pendientes_por_usuario[$id_u]['max_rezago']) {
+            $pendientes_por_usuario[$id_u]['max_rezago'] = (int)$p['dias_rezago'];
+            $pendientes_por_usuario[$id_u]['oficio_urgente'] = $p['numero_oficio'];
+        }
+    }
 
     // 4. Folios capturados por día (Usa 'creado_en')
-    $capturas_diarias = $pdo->query("SELECT 
-            DATE(creado_en) as fecha, 
+    $capturas_diarias = $pdo->query("SELECT
+            DATE(creado_en) as fecha,
             COUNT(id_registro) as total_capturados
         FROM control_gestion
         WHERE creado_en IS NOT NULL
@@ -50,8 +79,8 @@ try {
         ORDER BY fecha ASC
         LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
 
-    // 5. NUEVA CONSULTA: RATING / RANKING DE QUIÉN CAPTURÓ MÁS (Basado en creado_por)
-    $rating_captura = $pdo->query("SELECT 
+    // 5. Rating de capturas (Basado en creado_por)
+    $rating_captura = $pdo->query("SELECT
             u.id_usuario,
             u.nombre_completo,
             u.username,
@@ -103,7 +132,6 @@ foreach ($rating_captura as $rc) {
     <title>Dashboard Ejecutivo por Personal | SSC</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <!-- Chart.js + Plugin de DataLabels -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <style>
@@ -112,11 +140,22 @@ foreach ($rating_captura as $rc) {
         .card-metric { border-radius: 8px; border: none; }
         .table-responsive { max-height: 400px; overflow-y: auto; }
         .avatar-rating { width: 32px; height: 32px; object-fit: cover; border-radius: 50%; border: 2px solid #861532; }
+        
+        /* Ajustes y optimización exclusiva para Impresión */
+        @media print {
+            .no-print, nav, .btn { display: none !important; }
+            body { background-color: #fff !important; font-size: 10pt; }
+            .card { border: 1px solid #ddd !important; shadow: none !important; page-break-inside: avoid; }
+            .container-fluid { padding: 0 !important; }
+            .col-xl-4, .col-xl-5, .col-xl-6, .col-xl-7, .col-xl-8, .col-md-6, .col-md-7, .col-md-5 { width: 100% !important; }
+            .table-responsive { max-height: none !important; overflow: visible !important; }
+            canvas { max-width: 100% !important; height: auto !important; }
+        }
     </style>
 </head>
 <body>
 
-<nav class="navbar navbar-ssc shadow-sm mb-4">
+<nav class="navbar navbar-ssc shadow-sm mb-4 no-print">
     <div class="container-fluid py-1 px-4">
         <span class="navbar-brand text-white fw-bold fs-5"><i class="fa-solid fa-chart-pie me-2 text-warning"></i>SSC | Panel de Productividad</span>
         <a href="index.php" class="btn btn-outline-light btn-sm"><i class="fa-solid fa-arrow-left me-1"></i>Regresar al Sistema</a>
@@ -125,17 +164,18 @@ foreach ($rating_captura as $rc) {
 
 <div class="container-fluid px-4 pb-5">
 
-    <!-- Bloque de Botones de Impresión -->
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="fw-bold text-dark m-0">📊 Monitoreo y Rendimiento de Personal</h3>
-        <a href="reporte_imprimible.php" target="_blank" class="btn btn-dark bg-gradient shadow-sm">
-            <i class="fa-solid fa-print me-2 text-warning"></i>Generar Impresión (PDF)
-        </a>
+        <div>
+            <h3 class="fw-bold text-dark m-0">📊 Monitoreo Ejecutivo y Rendimiento Operativo</h3>
+            <small class="text-muted">Generado el: <?php echo date('d/m/Y H:i'); ?></small>
+        </div>
+        <button onclick="window.print()" class="btn btn-dark bg-gradient shadow-sm no-print">
+            <i class="fa-solid fa-print me-2 text-warning"></i>Imprimir Reporte (PDF)
+        </button>
     </div>
 
-    <!-- Primera Fila: Rating de Capturistas (Nuevo) -->
+    <!-- Primera Fila: Top Capturas -->
     <div class="row g-3 mb-4">
-        <!-- Tabla Rating Top Captura -->
         <div class="col-xl-5 col-md-6">
             <div class="card p-3 shadow-sm h-100 bg-white card-metric">
                 <h6 class="fw-bold text-dark mb-3"><i class="fa-solid fa-trophy me-2 text-warning"></i>Rating: Mayor Número de Capturas</h6>
@@ -150,9 +190,9 @@ foreach ($rating_captura as $rc) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php 
+                            <?php
                             $posicion = 1;
-                            foreach($rating_captura as $rc): 
+                            foreach($rating_captura as $rc):
                                 $foto = (!empty($rc['foto_perfil'])) ? 'uploads/perfiles/' . $rc['foto_perfil'] : 'https://via.placeholder.com/32?text=U';
                                 $medalla = '';
                                 if ($posicion === 1) $medalla = '🥇 ';
@@ -173,9 +213,9 @@ foreach ($rating_captura as $rc) {
                                 <td class="text-center"><span class="badge bg-secondary" style="font-size:0.7rem;"><?php echo $rc['rol']; ?></span></td>
                                 <td class="text-end fw-bold fs-6 text-primary"><?php echo number_format($rc['total_capturados']); ?></td>
                             </tr>
-                            <?php 
+                            <?php
                             $posicion++;
-                            endforeach; 
+                            endforeach;
                             ?>
                         </tbody>
                     </table>
@@ -183,7 +223,6 @@ foreach ($rating_captura as $rc) {
             </div>
         </div>
 
-        <!-- Gráfica Rating de Captura -->
         <div class="col-xl-7 col-md-6">
             <div class="card p-3 shadow-sm h-100 bg-white card-metric">
                 <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-chart-column me-2 text-info"></i>Comparativa Visual de Captura</h6>
@@ -194,9 +233,8 @@ foreach ($rating_captura as $rc) {
         </div>
     </div>
 
-    <!-- Segunda Fila: Gráficas Generales y por Personal -->
+    <!-- Segunda Fila: Gráficas de Estatus y Rendimiento -->
     <div class="row g-3 mb-4">
-        <!-- Gráfica General -->
         <div class="col-xl-4 col-md-5">
             <div class="card p-3 shadow-sm h-100 bg-white card-metric">
                 <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-shield-halved me-1"></i>Estado General de Folios</h6>
@@ -206,7 +244,6 @@ foreach ($rating_captura as $rc) {
             </div>
         </div>
 
-        <!-- Gráfica de Rendimiento por Personal (Atención) -->
         <div class="col-xl-8 col-md-7">
             <div class="card p-3 shadow-sm h-100 bg-white card-metric">
                 <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-users-gear me-1"></i>Carga de Trabajo / Atención por Servidor Público</h6>
@@ -229,66 +266,64 @@ foreach ($rating_captura as $rc) {
         </div>
     </div>
 
-    <!-- Cuarta Fila: Tablas Detalladas -->
-    <div class="row g-3">
-        <!-- Tabla de Rendimiento General por Empleado -->
-        <div class="col-xl-6">
+    <!-- Cuarta Fila: Análisis Inteligente de Rezagos y Pendientes -->
+    <div class="row g-3 mb-4">
+        <div class="col-12">
             <div class="card p-3 shadow-sm bg-white card-metric">
-                <h6 class="fw-bold text-dark mb-2"><i class="fa-solid fa-list-check me-2 text-success"></i>Productividad por Integrante (Atención)</h6>
-                <div class="table-responsive">
-                    <table class="table table-sm table-striped align-middle mt-2" style="font-size:0.85rem;">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Servidor Público Asignado</th>
-                                <th class="text-center">Concluidos</th>
-                                <th class="text-center">Pendientes</th>
-                                <th class="text-center">Total Asignados</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach($personal_stats as $p): ?>
-                            <tr>
-                                <td class="fw-bold text-secondary"><?php echo htmlspecialchars($p['empleado']); ?></td>
-                                <td class="text-center"><span class="badge bg-success px-2 py-1"><?php echo $p['concluidos']; ?></span></td>
-                                <td class="text-center"><span class="badge bg-warning text-dark px-2 py-1"><?php echo $p['pendientes']; ?></span></td>
-                                <td class="text-center fw-bold text-dark"><?php echo $p['total']; ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tabla de Folios Pendientes de Acción con Responsable -->
-        <div class="col-xl-6">
-            <div class="card p-3 shadow-sm bg-white card-metric">
-                <h6 class="fw-bold text-dark mb-2"><i class="fa-solid fa-clock-history me-2 text-danger"></i>Ubicación de Folios Pendientes</h6>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mt-2" style="font-size:0.82rem;">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Número de Oficio</th>
-                                <th>Responsable</th>
-                                <th class="text-center">Acción</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if(empty($pendientes_lista)): ?>
-                                <tr><td colspan="3" class="text-center text-muted">No hay folios pendientes actualmente 🎉</td></tr>
-                            <?php endif; ?>
-                            <?php foreach($pendientes_lista as $r): ?>
-                            <tr>
-                                <td class="fw-bold text-dark"><?php echo htmlspecialchars($r['numero_oficio']); ?></td>
-                                <td class="text-muted"><i class="fa-solid fa-user-tag me-1 text-secondary" style="font-size:0.75rem;"></i><?php echo htmlspecialchars($r['asignado'] ?? 'SIN ASIGNAR'); ?></td>
-                                <td class="text-center">
-                                    <a href="index.php?id=<?php echo $r['id_registro']; ?>" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold" style="font-size:0.75rem;">Atender</a>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
+                <h6 class="fw-bold text-dark mb-3"><i class="fa-solid fa-triangle-exclamation text-danger me-2"></i>Análisis Segmentado de Pendientes y Rezago por Servidor Público</h6>
+                
+                <?php if (empty($pendientes_por_usuario)): ?>
+                    <div class="alert alert-success text-center mb-0">No existen folios pendientes en el sistema. 🎉</div>
+                <?php else: ?>
+                    <div class="row g-3">
+                        <?php foreach ($pendientes_por_usuario as $usr): ?>
+                            <div class="col-xl-6 col-12">
+                                <div class="border rounded p-3 bg-light h-100">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="fw-bold text-primary m-0"><i class="fa-solid fa-user me-2"></i><?php echo htmlspecialchars($usr['nombre']); ?></h6>
+                                        <span class="badge bg-danger fs-6"><?php echo $usr['total_pendientes']; ?> Pendientes</span>
+                                    </div>
+                                    <div class="small mb-3 text-secondary">
+                                        <strong>Oficio más antiguo/urgente:</strong> 
+                                        <span class="text-dark fw-bold"><?php echo htmlspecialchars($usr['oficio_urgente']); ?></span> 
+                                        <span class="badge bg-warning text-dark ms-1">(<?php echo $usr['max_rezago']; ?> días de rezago)</span>
+                                    </div>
+                                    
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover bg-white border align-middle mb-0" style="font-size:0.8rem;">
+                                            <thead class="table-dark">
+                                                <tr>
+                                                    <th>Número Oficio</th>
+                                                    <th class="text-center">Fecha Registro</th>
+                                                    <th class="text-center">Días Transcurridos</th>
+                                                    <th class="text-center no-print">Acción</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($usr['listado'] as $item): ?>
+                                                    <tr>
+                                                        <td class="fw-bold"><?php echo htmlspecialchars($item['numero_oficio']); ?></td>
+                                                        <td class="text-center"><?php echo date('d/m/Y', strtotime($item['creado_en'])); ?></td>
+                                                        <td class="text-center">
+                                                            <?php 
+                                                            $dias = (int)$item['dias_rezago'];
+                                                            $badge_color = ($dias > 15) ? 'bg-danger' : (($dias > 7) ? 'bg-warning text-dark' : 'bg-info text-dark');
+                                                            ?>
+                                                            <span class="badge <?php echo $badge_color; ?>"><?php echo $dias; ?> días</span>
+                                                        </td>
+                                                        <td class="text-center no-print">
+                                                            <a href="index.php?id=<?php echo $item['id_registro']; ?>" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold" style="font-size:0.75rem;">Atender</a>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -296,7 +331,6 @@ foreach ($rating_captura as $rc) {
 </div>
 
 <script>
-    // Registrar plugin de etiquetas globales en Chart.js
     Chart.register(ChartDataLabels);
 
     // 1. Gráfica Rating de Captura
