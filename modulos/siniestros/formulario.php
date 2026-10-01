@@ -300,7 +300,7 @@ if (!$id) {
 
         <div class="footer-signature mb-3">
             <p class="mb-1">© 2026 Subdirección de Riesgos y Aseguramiento | Registro de Siniestros</p>
-            <p class="fw-bold text-dark">Diseñado por Ing. Juan Manuel Hernandez Lugo</p>
+            <p class="fw-bold text-dark">Diseñado por Ing. Juan Manuel Hernandez Lugo jmhrs8@gmail.com</p>
         </div>
     </div>
 </div>
