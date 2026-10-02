@@ -1,20 +1,17 @@
 <?php
-// Ocultar avisos de funciones obsoletas (PHP 8.2+) para no romper FPDF
-error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
-ini_set('display_errors', 0);
-
 require_once "../../config/conexion.php";
 require_once "../../libs/fpdf/fpdf.php";
 
 // 1. Obtener y limpiar el folio unificado desde la URL
 $folio = isset($_GET['folio']) ? trim($_GET['folio']) : '';
 
+// Ajustado para buscar en la tabla unificada 'siniestros' usando la columna correcta 'folio'
 $stmt = $pdo->prepare("SELECT * FROM siniestros WHERE folio = ? LIMIT 1");
 $stmt->execute([$folio]);
 $datos = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$datos) {
-    die("ERROR: NO SE ENCONTRÓ NINGÚN REGISTRO CON EL FOLIO " . htmlspecialchars($folio));
+if (!$datos) { 
+    die("ERROR: NO SE ENCONTRÓ NINGÚN REGISTRO CON EL FOLIO " . htmlspecialchars($folio)); 
 }
 
 $pdf = new FPDF('P', 'mm', 'Letter');
@@ -28,9 +25,9 @@ $pdf->SetFont('Arial', 'B', 7);
 $pdf->Cell(0, 4, utf8_decode('CIUDAD DE MÉXICO | SECRETARÍA DE SEGURIDAD CIUDADANA | SSC-DGRMAYS'), 0, 1, 'L');
 
 $pdf->SetFont('Arial', 'B', 10);
-$pdf->Cell(125, 10, utf8_decode('REPORTE TELEFÓNICO DE SINIESTRO/SUB DE RIESGOS Y ASE'), 0, 0, 'L');
+$pdf->Cell(125, 10, utf8_decode('REPORTE TELEFÓNICO DE SINIESTRO'), 0, 0, 'L');
 
-// Cuadro Fecha/Hora
+// Cuadro Fecha/Hora (Posición fija a la derecha)
 $pdf->SetXY(140, 12);
 $pdf->SetFont('Arial', '', 6);
 $pdf->Cell(12, 4, 'DIA', 1, 0, 'C', true);
@@ -39,32 +36,36 @@ $pdf->Cell(12, 4, utf8_decode('AÑO'), 1, 0, 'C', true);
 $pdf->Cell(12, 4, 'HORA', 1, 1, 'C', true);
 $pdf->SetX(140);
 
-$f = strtotime($datos['fecha'] ?? $datos['fecha_creacion'] ?? date('Y-m-d'));
+// Usamos la fecha de creación del registro o la actual si falla
+$f = strtotime($datos['fecha_creacion'] ?? date('Y-m-d'));
 $pdf->Cell(12, 5, date('d', $f), 1, 0, 'C');
 $pdf->Cell(12, 5, date('m', $f), 1, 0, 'C');
 $pdf->Cell(12, 5, date('Y', $f), 1, 0, 'C');
-$pdf->Cell(12, 5, substr($datos['hora'] ?? '00:00', 0, 5), 1, 1, 'C');
+$pdf->Cell(12, 5, substr($datos['hora_reporte_aseg'] ?? '00:00', 0, 5), 1, 1, 'C');
 
 // --- 1. DATOS DEL VEHÍCULO ---
-$pdf->SetY(32);
+$pdf->SetY(32); 
 $pdf->SetFont('Arial', 'B', 7);
 $pdf->Cell(150, 5, utf8_decode('DATOS DEL VEHÍCULO ASEGURADO'), 1, 0, 'L', true);
 $pdf->Cell(40, 5, 'FOLIO', 1, 1, 'L', true);
 
 $pdf->SetFont('Arial', '', 6);
 $y_v = $pdf->GetY();
+// Mapeo adaptado a las columnas limpias de la tabla unificada
 $pdf->Cell(50, 7, 'MARCA: ' . mb_strtoupper(utf8_decode($datos['marca'] ?? '')), 1);
 $pdf->Cell(50, 7, 'MODELO: ' . mb_strtoupper(utf8_decode($datos['modelo'] ?? '')), 1);
 $pdf->Cell(50, 7, 'TIPO: ' . mb_strtoupper(utf8_decode($datos['tipo'] ?? '')), 1);
 
+// Cuadro de Folio independiente
 $pdf->SetXY(160, $y_v);
 $pdf->SetFont('Arial', 'B', 11);
 $pdf->Cell(40, 14, $datos['folio'], 1, 0, 'C');
 
 $pdf->SetXY(10, $y_v + 7);
 $pdf->SetFont('Arial', '', 6);
-$pdf->Cell(50, 7, 'ECONOMICO/PLACAS: ' . mb_strtoupper(utf8_decode($datos['economico_placas'] ?? $datos['economico'] ?? '')), 1);
+$pdf->Cell(50, 7, 'ECONOMICO/PLACAS: ' . mb_strtoupper(utf8_decode($datos['economico_placas'] ?? '')), 1);
 
+// Adscripción con MultiCell sin chocar con el Folio
 $pdf->SetXY(60, $y_v + 7);
 $pdf->MultiCell(100, 3.5, utf8_decode('ADSCRIPCIÓN: ') . mb_strtoupper(utf8_decode($datos['adscripcion'] ?? '')), 1, 'L');
 
@@ -95,18 +96,18 @@ $pdf->Cell(190, 6, 'NOMBRE COMPLETO: ' . mb_strtoupper(utf8_decode($datos['quien
 $pdf->SetFont('Arial', 'B', 7);
 $pdf->Cell(190, 5, 'DATOS DEL TERCERO', 1, 1, 'L', true);
 $pdf->SetFont('Arial', '', 6);
-$pdf->Cell(45, 6, 'MARCA/MODELO: ' . mb_strtoupper(utf8_decode($datos['tercero_marca_modelo'] ?? $datos['vehiculo_3ro'] ?? '')), 1);
-$pdf->Cell(45, 6, 'TIPO: ' . mb_strtoupper(utf8_decode($datos['tercero_tipo'] ?? '')), 1);
-$pdf->Cell(50, 6, 'PLACAS: ' . mb_strtoupper($datos['tercero_placas'] ?? $datos['placas_3ro'] ?? ''), 1);
+$pdf->Cell(45, 6, 'MARCA: ' . mb_strtoupper(utf8_decode($datos['tercero_marca_modelo'] ?? '')), 1);
+$pdf->Cell(45, 6, 'MODELO/TIPO: ' . mb_strtoupper(utf8_decode($datos['tercero_tipo'] ?? '')), 1);
+$pdf->Cell(50, 6, 'PLACAS: ' . mb_strtoupper($datos['tercero_placas'] ?? ''), 1);
 $pdf->Cell(50, 6, 'COLOR: ' . mb_strtoupper(utf8_decode($datos['tercero_color'] ?? '')), 1, 1);
 
 // --- 5. UBICACIÓN ---
 $pdf->SetFont('Arial', 'B', 7);
 $pdf->Cell(190, 5, utf8_decode('UBICACIÓN DEL ACCIDENTE'), 1, 1, 'L', true);
 $pdf->SetFont('Arial', '', 6);
-$pdf->Cell(190, 6, 'CALLE(S): ' . mb_strtoupper(utf8_decode($datos['ubi_calle'] ?? $datos['calles'] ?? '')), 1, 1);
-$pdf->Cell(130, 6, 'COLONIA: ' . mb_strtoupper(utf8_decode($datos['ubi_colonia'] ?? $datos['colonia'] ?? '')), 1, 0);
-$pdf->Cell(60, 6, utf8_decode('ALCALDÍA: ') . mb_strtoupper(utf8_decode($datos['ubi_alcaldia'] ?? $datos['alcaldia'] ?? '')), 1, 1);
+$pdf->Cell(190, 6, 'CALLE(S): ' . mb_strtoupper(utf8_decode($datos['ubi_calle'] ?? '')), 1, 1);
+$pdf->Cell(130, 6, 'COLONIA: ' . mb_strtoupper(utf8_decode($datos['ubi_colonia'] ?? '')), 1, 0);
+$pdf->Cell(60, 6, utf8_decode('ALCALDÍA: ') . mb_strtoupper(utf8_decode($datos['ubi_alcaldia'] ?? '')), 1, 1);
 $pdf->Cell(190, 6, 'REFERENCIAS: ' . mb_strtoupper(utf8_decode($datos['ubi_referencias'] ?? '')), 1, 1);
 
 // --- 6. LESIONADOS ---
@@ -125,8 +126,8 @@ for($i=1; $i<=3; $i++){
 $pdf->SetFont('Arial', 'B', 7);
 $pdf->Cell(190, 5, 'CONTROL OPERATIVO', 1, 1, 'L', true);
 $pdf->SetFont('Arial', '', 6);
-$pdf->Cell(190, 6, 'SUPERVISOR: ' . mb_strtoupper(utf8_decode($datos['nombre_elemento'] ?? '')), 1, 1);
-$pdf->Cell(60, 6, 'TALLER: ' . mb_strtoupper(utf8_decode($datos['taller_asignado'] ?? $datos['taller_ingreso'] ?? '')), 1);
+$pdf->Cell(190, 6, 'SUPERVISOR: ' . mb_strtoupper(utf8_decode($datos['supervisor_nombre'] ?? '')), 1, 1);
+$pdf->Cell(60, 6, 'TALLER: ' . mb_strtoupper(utf8_decode($datos['taller_asignado'] ?? '')), 1); // Columna limpia
 $pdf->Cell(40, 6, 'ASIGNADO: ' . ($datos['hora_asignado'] ?? ''), 1);
 $pdf->Cell(45, 6, 'LLEGADA: ' . ($datos['hora_llegada'] ?? ''), 1);
 $pdf->Cell(45, 6, 'TERMINADO: ' . ($datos['hora_terminado'] ?? ''), 1, 1);
@@ -136,11 +137,11 @@ $pdf->SetFont('Arial', 'B', 7);
 $pdf->Cell(190, 5, 'REPORTE A LA ASEGURADORA', 1, 1, 'L', true);
 $pdf->SetFont('Arial', '', 6);
 $pdf->Cell(120, 6, 'COORDINADOR: ' . mb_strtoupper(utf8_decode($datos['coord_aseguradora'] ?? '')), 1);
-$pdf->Cell(70, 6, 'N. SINIESTRO: ' . mb_strtoupper($datos['no_siniestro_aseg'] ?? $datos['no_siniestro'] ?? ''), 1, 1);
+$pdf->Cell(70, 6, 'N. SINIESTRO: ' . mb_strtoupper($datos['no_siniestro_aseg'] ?? ''), 1, 1);
 $pdf->Cell(120, 6, 'AJUSTADOR: ' . mb_strtoupper(utf8_decode($datos['ajustador_nombre'] ?? '')), 1);
-$pdf->Cell(70, 6, utf8_decode('REPORTÓ A LAS: ') . ($datos['hora_reporte_aseg'] ?? $datos['hora_reporte'] ?? ''), 1, 1);
+$pdf->Cell(70, 6, utf8_decode('REPORTÓ A LAS: ') . ($datos['hora_reporte_aseg'] ?? ''), 1, 1);
 
-// --- PIE PÁGINA 1 ---
+// --- PIE DE PÁGINA 1 ---
 $pdf->SetY(260);
 $pdf->SetFont('Arial', 'B', 8);
 $pdf->Cell(0, 5, utf8_decode('NOMBRE Y FIRMA DE LA/EL OPERADOR(A)'), 'T', 1, 'C');
@@ -152,10 +153,11 @@ $pdf->AddPage();
 $pdf->SetFont('Arial', 'B', 8);
 $pdf->Cell(0, 6, 'OBSERVACIONES', 0, 1);
 $pdf->SetFont('Arial', '', 7);
-$pdf->MultiCell(190, 6, mb_strtoupper(utf8_decode($datos['observaciones_generales'] ?? $datos['observaciones'] ?? '')), 'B', 'L');
+$pdf->MultiCell(190, 6, mb_strtoupper(utf8_decode($datos['observaciones_generales'] ?? '')), 'B', 'L');
 $currentY = $pdf->GetY();
 while($currentY < 60){ $pdf->Cell(190, 6, '', 'B', 1); $currentY += 6; }
 
+// Riesgo Afectado
 $pdf->Ln(5);
 $pdf->SetFont('Arial', 'B', 8);
 $pdf->Cell(0, 5, 'RIESGO AFECTADO', 0, 1);
@@ -179,6 +181,7 @@ foreach($riesgos as $r) {
     $pdf->Cell(50, 6, number_format((float)($datos[$r[2]] ?? 0), 2), 'B', 1, 'R');
 }
 
+// Responsable y Acta
 $pdf->Ln(5);
 $pdf->SetFont('Arial', 'B', 8);
 $pdf->Cell(0, 5, utf8_decode('¿QUIÉN FUE EL RESPONSABLE?'), 0, 1);
@@ -195,178 +198,16 @@ $pdf->Cell(15, 6, (($datos['acta_levantada'] ?? 0) == 1 ? '( X )' : '(   )'), 0)
 $pdf->Cell(30, 6, utf8_decode('NÚMERO DE ACTA'), 0);
 $pdf->Cell(50, 6, mb_strtoupper($datos['no_acta'] ?? ''), 'B', 1);
 
+// Deducible
 $pdf->SetX(40);
 $pdf->Cell(45, 6, 'APLICA DEDUCIBLE', 0);
 $pdf->Cell(60, 6, 'SI ( '.(($datos['aplica_deducible'] ?? '') == 'SÍ' || ($datos['aplica_deducible'] ?? '') == 'SI' ? 'X' : ' ').' )    NO ( '.(($datos['aplica_deducible'] ?? '') == 'NO' ? 'X' : ' ').' )', 0, 1);
 
+// Conclusión
 $pdf->Ln(5);
 $pdf->SetFont('Arial', 'B', 8);
 $pdf->Cell(0, 5, utf8_decode('CÓMO CONCLUYÓ LA ATENCIÓN DEL SINIESTRO'), 0, 1);
 $pdf->SetFont('Arial', '', 7);
 $pdf->MultiCell(190, 6, mb_strtoupper(utf8_decode($datos['concluyo_atencion'] ?? '')), 'B', 'L');
 
-// --- PÁGINA 3: REPORTE FOTOGRÁFICO ---
-$pdf->AddPage();
-$pdf->SetFont('Arial', 'B', 10);
-$pdf->Cell(0, 6, utf8_decode('REPORTE FOTOGRÁFICO DE SINIESTRO/ SUBDIR. DE RIESGOS Y ASE.'), 0, 1, 'L');
-$pdf->Ln(1);
-
-// DATOS DE IDENTIFICACIÓN Y FOLIOS EN LA PÁGINA DE FOTOS
-$pdf->SetFont('Arial', 'B', 7);
-$pdf->SetFillColor(245, 245, 245);
-$pdf->Cell(190, 5, utf8_decode('DATOS DE IDENTIFICACIÓN Y CONTROL DEL SINIESTRO'), 1, 1, 'L', true);
-
-$pdf->SetFont('Arial', '', 6);
-$pdf->Cell(95, 5, 'FOLIO DE CONTROL: ' . mb_strtoupper($datos['folio'] ?? ''), 1, 0);
-$pdf->Cell(95, 5, 'NO. SINIESTRO ASEGURADORA: ' . mb_strtoupper($datos['no_siniestro_aseg'] ?? $datos['no_siniestro'] ?? ''), 1, 1);
-
-$pdf->Cell(50, 5, 'MARCA: ' . mb_strtoupper(utf8_decode($datos['marca'] ?? '')), 1, 0);
-$pdf->Cell(50, 5, 'MODELO: ' . mb_strtoupper(utf8_decode($datos['modelo'] ?? '')), 1, 0);
-$pdf->Cell(45, 5, 'NO. SERIE: ' . mb_strtoupper($datos['no_serie'] ?? ''), 1, 0);
-$pdf->Cell(45, 5, 'NO. INVENTARIO: ' . ($datos['no_inventario'] ?? ''), 1, 1);
-$pdf->Ln(3);
-
-function decodificarFotosBD($campo_bd) {
-    if (empty($campo_bd)) return [];
-    $arr = @json_decode($campo_bd, true);
-    if (is_array($arr)) return $arr;
-    if (strpos($campo_bd, ',') !== false) {
-        return array_map('trim', explode(',', $campo_bd));
-    }
-    return [$campo_bd];
-}
-
-$fotos_unidad = decodificarFotosBD($datos['foto_unidad'] ?? '');
-$fotos_vehiculo = decodificarFotosBD($datos['foto_vehiculo'] ?? '');
-
-function obtenerRutaImagenSegura($ruta_original) {
-    $ruta_limpia = trim(str_replace('\\', '/', $ruta_original));
-    if (empty($ruta_limpia)) return false;
-
-    $posibles_rutas = [
-        __DIR__ . '/../../' . ltrim($ruta_limpia, '/'),
-        __DIR__ . '/' . ltrim($ruta_limpia, '/'),
-        $_SERVER['DOCUMENT_ROOT'] . '/' . ltrim($ruta_limpia, '/'),
-        $ruta_limpia
-    ];
-
-    $archivo_encontrado = false;
-    foreach ($posibles_rutas as $path) {
-        if (file_exists($path) && is_file($path)) {
-            $archivo_encontrado = $path;
-            break;
-        }
-    }
-
-    if (!$archivo_encontrado) return false;
-
-    $ext = strtolower(pathinfo($archivo_encontrado, PATHINFO_EXTENSION));
-    
-    if ($ext === 'jfif' || $ext === 'jpeg' || $ext === 'jpg' || $ext === 'png') {
-        if ($ext === 'jfif' && function_exists('imagecreatefromjpeg')) {
-            $img = @imagecreatefromjpeg($archivo_encontrado);
-            if ($img) {
-                $tmp_file = sys_get_temp_dir() . '/fpdf_tmp_' . md5($archivo_encontrado) . '.jpg';
-                imagejpeg($img, $tmp_file, 90);
-                imagedestroy($img);
-                return $tmp_file;
-            }
-        }
-        return $archivo_encontrado;
-    }
-
-    $info = @getimagesize($archivo_encontrado);
-    if (!$info) return false;
-
-    $mime = strtolower($info['mime']);
-
-    if ($mime === 'image/jpeg' || $mime === 'image/jpg' || $mime === 'image/png' || $mime === 'image/pjpeg') {
-        return $archivo_encontrado;
-    }
-
-    if ($mime === 'image/webp' && function_exists('imagecreatefromwebp')) {
-        $img = @imagecreatefromwebp($archivo_encontrado);
-        if ($img) {
-            $tmp_file = sys_get_temp_dir() . '/fpdf_tmp_' . md5($archivo_encontrado) . '.jpg';
-            imagejpeg($img, $tmp_file, 85);
-            imagedestroy($img);
-            return $tmp_file;
-        }
-    }
-
-    return false;
-}
-
-function imprimirGaleriaFotos($pdf, $titulo, $fotos) {
-    $pdf->SetFont('Arial', 'B', 8);
-    $pdf->SetFillColor(235, 235, 235);
-    $pdf->Cell(190, 5, utf8_decode($titulo), 1, 1, 'L', true);
-    $pdf->Ln(2);
-
-    if (empty($fotos) || !is_array($fotos)) {
-        $pdf->SetFont('Arial', 'I', 7);
-        $pdf->Cell(190, 6, utf8_decode('No se registraron fotografías para esta sección.'), 1, 1, 'C');
-        $pdf->Ln(3);
-        return;
-    }
-
-    $ancho_img = 50; 
-    $alto_img = 35;  
-    $margen_x = 10;   
-    $margen_y = 5;   
-    $cols = 3;
-
-    $col = 0;
-    $x_inicial = 15; 
-    $x = $x_inicial;
-    $y = $pdf->GetY();
-    $cont_validas = 0;
-
-    foreach ($fotos as $ruta) {
-        $ruta_valida = obtenerRutaImagenSegura($ruta);
-        if ($ruta_valida) {
-            $cont_validas++;
-
-            if ($y + $alto_img > 255) {
-                $pdf->AddPage();
-                $y = $pdf->GetY() + 5;
-                $x = $x_inicial;
-                $col = 0;
-            }
-
-            try {
-                @$pdf->Image($ruta_valida, $x, $y, $ancho_img, $alto_img);
-                $pdf->Rect($x, $y, $ancho_img, $alto_img); 
-            } catch (Exception $e) {
-                // Silenciar errores individuales
-            }
-
-            $col++;
-            if ($col < $cols) {
-                $x += $ancho_img + $margen_x;
-            } else {
-                $col = 0;
-                $x = $x_inicial;
-                $y += $alto_img + $margen_y;
-            }
-        }
-    }
-
-    if ($cont_validas === 0) {
-        $pdf->SetFont('Arial', 'I', 7);
-        $pdf->Cell(190, 6, utf8_decode('No se encontraron los archivos físicos de las imágenes en el servidor.'), 1, 1, 'C');
-        $pdf->Ln(3);
-        return;
-    }
-
-    if ($col > 0) {
-        $y += $alto_img + $margen_y;
-    }
-    $pdf->SetY($y + 2);
-}
-
-imprimirGaleriaFotos($pdf, 'FOTOGRAFÍAS DE LA UNIDAD OFICIAL', $fotos_unidad);
-imprimirGaleriaFotos($pdf, 'FOTOGRAFÍAS DEL VEHÍCULO TERCERO', $fotos_vehiculo);
-
 $pdf->Output('I', "Reporte_Siniestro_" . $folio . ".pdf");
-?>
