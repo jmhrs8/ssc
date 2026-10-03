@@ -1,0 +1,144 @@
+<?php
+// Mantenemos la protección de errores y el búfer de salida
+error_reporting(E_ALL & ~E_DEPRECATED); 
+ini_set('display_errors', 0); 
+ob_start(); 
+
+session_start();
+require('fpdf/fpdf.php');
+include('config.php');
+
+if (!isset($_SESSION['rol'])) {
+    header("Location: login.php");
+    exit();
+}
+
+if(!isset($_GET['id'])) die("ID no proporcionado");
+$id = intval($_GET['id']);
+$res = $conn->query("SELECT * FROM reportes WHERE id = $id");
+$data = $res->fetch_assoc();
+
+if (!$data) die("Reporte no encontrado");
+$fotos = json_decode($data['fotos'], true);
+
+if (!function_exists('to_iso')) {
+    function to_iso($t) { 
+        return mb_convert_encoding($t ?? '', 'ISO-8859-1', 'UTF-8'); 
+    }
+}
+
+class PDF extends FPDF {
+    protected $datos_unidad;
+    function setUnidad($d) { $this->datos_unidad = $d; }
+
+    function Header() {
+        if(file_exists('logo_cdmx.png')) {
+            $this->Image('logo_cdmx.png', 10, 8, 82.5); 
+        }
+
+        $posX = 135; 
+        $this->SetXY($posX, 8); 
+        $this->SetFont('Arial', '', 6);
+        $this->Cell(70, 2.5, to_iso('CIUDAD DE MÉXICO'), 0, 1, 'L');
+        $this->SetX($posX); $this->Cell(70, 2.5, to_iso('CAPITAL DE LA TRANSFORMACIÓN'), 0, 1, 'L');
+        $this->SetX($posX); $this->Cell(70, 2.5, to_iso('SECRETARÍA DE SEGURIDAD CIUDADANA'), 0, 1, 'L');
+        $this->SetX($posX); $this->Cell(70, 2.5, to_iso('OFICIALÍA MAYOR'), 0, 1, 'L');
+        $this->SetX($posX); $this->Cell(70, 2.5, to_iso('DIRECCIÓN GENERAL DE RECURSOS MATERIALES'), 0, 1, 'L');
+        
+        $this->SetY(35); 
+        $this->SetFont('Arial', 'B', 14);
+        $this->SetTextColor(107, 30, 52); 
+        $this->Cell(0, 10, to_iso('REPORTE FOTOGRÁFICO'), 0, 1, 'C');
+        $this->SetTextColor(0, 0, 0);
+
+        // --- AJUSTE QUIRÚRGICO DE CUADROS ---
+        $ancho_caja = 51.4; 
+        $separacion = 7.75; 
+        $x_ini = 10 + 10.15; 
+        $y_box = 52;
+
+        $this->SetFont('Arial', 'B', 10);
+        $this->SetFillColor(240, 240, 240);
+        
+        $this->SetXY($x_ini, $y_box - 6);
+        $this->Cell($ancho_caja, 6, to_iso('NO. INVENTARIO'), 0, 0, 'C');
+        $this->SetX($x_ini + $ancho_caja + $separacion);
+        $this->Cell($ancho_caja, 6, to_iso('NO. PLACA'), 0, 0, 'C');
+        $this->SetX($x_ini + ($ancho_caja + $separacion) * 2);
+        $this->Cell($ancho_caja, 6, to_iso('TIPO DE UNIDAD'), 0, 1, 'C');
+
+        $this->SetXY($x_ini, $y_box);
+        $this->Cell($ancho_caja, 11, to_iso($this->datos_unidad['n_inventario'] ?? ''), 1, 0, 'C', true);
+        $this->SetX($x_ini + $ancho_caja + $separacion);
+        $this->Cell($ancho_caja, 11, to_iso($this->datos_unidad['n_placa'] ?? ''), 1, 0, 'C', true);
+        $this->SetX($x_ini + ($ancho_caja + $separacion) * 2);
+        $this->Cell($ancho_caja, 11, strtoupper(to_iso($this->datos_unidad['n_tipo'] ?? '')), 1, 1, 'C', true);
+    }
+
+    function Footer() {
+        $this->SetDrawColor(107, 30, 52); 
+        $this->SetLineWidth(0.8);
+        $y_l = $this->GetPageHeight() - 20; 
+        $this->Line(10, $y_l, 200, $y_l); 
+        
+        if(file_exists('logo_ssc.png')) {
+            $this->Image('logo_ssc.png', 160, $y_l + 2, 40); 
+        }
+
+        $this->SetXY(10, $y_l + 3);
+        $this->SetFont('Arial', 'B', 8);
+        $this->SetTextColor(107, 30, 52); 
+        $this->Cell(0, 4, to_iso('CONDICIONES DE LA UNIDAD'), 0, 1, 'L');
+        
+        $this->SetTextColor(0, 0, 0); 
+        $this->SetFont('Arial', '', 6);
+        $this->MultiCell(130, 2.5, to_iso("Cecilio Róbelo número 9, Aeronáutica Militar, Venustiano Carranza, 15900.\nDocumento generado para fines de inventario oficial."), 0, 'L');
+        
+        $this->SetY($y_l + 12);
+        $this->SetFont('Arial', 'I', 7);
+        $this->Cell(0, 5, to_iso('Página ') . $this->PageNo() . ' de {nb}', 0, 0, 'C');
+    }
+}
+
+// Limpieza final del búfer antes de generar el PDF
+if (ob_get_length()) ob_end_clean();
+
+$pdf = new PDF();
+$pdf->setUnidad($data); 
+$pdf->AliasNbPages();
+$pdf->AddPage();
+
+if($fotos && is_array($fotos)){
+    $total = count($fotos);
+    // Lógica de distribución para 10 fotos en máximo 2 páginas mantenida
+    if ($total <= 8) {
+        $cols = 2; $rows_per_page = 2; $w = 85; $h = 60; $gapX = 10; $gapY = 10; $startY = 75;
+    } elseif ($total <= 12) {
+        $cols = 2; $rows_per_page = 3; $w = 85; $h = 53; $gapX = 10; $gapY = 8; $startY = 70;
+    } else {
+        $cols = 3; $fotos_por_pagina = ceil($total / 2); $rows_per_page = ceil($fotos_por_pagina / $cols);
+        $w = 58; $h = 42; $gapX = 5; $gapY = 5; $startY = 70;
+    }
+
+    $fotos_max_pagina = $cols * $rows_per_page;
+    foreach($fotos as $idx => $foto){
+        $path = 'uploads/' . $foto;
+        if(file_exists($path) && filesize($path) > 0){
+            if($idx > 0 && $idx % $fotos_max_pagina == 0) $pdf->AddPage();
+            $pos = $idx % $fotos_max_pagina;
+            $fila = floor($pos / $cols);
+            $columna = $pos % $cols;
+            $offsetX = (210 - ($cols * $w + ($cols - 1) * $gapX)) / 2;
+            $x = $offsetX + ($columna * ($w + $gapX));
+            $y = $startY + ($fila * ($h + $gapY));
+            
+            if(@getimagesize($path)) {
+                $pdf->Image($path, $x, $y, $w, $h);
+                $pdf->Rect($x, $y, $w, $h);
+            }
+        }
+    }
+}
+
+$pdf->Output('I', 'Reporte_SSC_' . ($data['n_inventario'] ?? '0') . '.pdf');
+?>

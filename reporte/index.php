@@ -1,0 +1,188 @@
+<?php
+session_start();
+
+// 1. Verificación de Seguridad: Permitir tanto a 'admin' como a 'usuario'
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php?error=acceso_denegado");
+    exit();
+}
+
+include('config.php');
+
+// --- NUEVO: MOTOR DE ESTADÍSTICAS (Basado en tu tabla 'reportes') ---
+try {
+    $hoy_res = $conn->query("SELECT COUNT(*) as total FROM reportes WHERE DATE(fecha) = CURDATE()");
+    $hoy_count = $hoy_res->fetch_assoc()['total'] ?? 0;
+
+    $semana_res = $conn->query("SELECT COUNT(*) as total FROM reportes WHERE YEARWEEK(fecha, 1) = YEARWEEK(CURDATE(), 1)");
+    $semana_count = $semana_res->fetch_assoc()['total'] ?? 0;
+
+    $mes_res = $conn->query("SELECT COUNT(*) as total FROM reportes WHERE MONTH(fecha) = MONTH(CURDATE()) AND YEAR(fecha) = YEAR(CURDATE())");
+    $mes_count = $mes_res->fetch_assoc()['total'] ?? 0;
+} catch (Exception $e) {
+    $hoy_count = $semana_count = $mes_count = 0;
+}
+
+// 2. Lógica de Eliminación (Solo permitida para Administradores)
+if (isset($_GET['delete']) && $_SESSION['rol'] === 'admin') {
+    $id_del = intval($_GET['delete']);
+    $conn->query("DELETE FROM reportes WHERE id = $id_del");
+    header("Location: index.php?msg=eliminado"); 
+    exit();
+}
+
+$res = $conn->query("SELECT * FROM reportes ORDER BY id DESC");
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Sistema Para revista SSC - Panel de Control</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root { --guinda: #6b1e34; --oro: #b38e5d; }
+        
+        body { 
+            font-family: sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background-color: #f4f4f4;
+            position: relative;
+            min-height: 100vh;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-image: url('nuevas-patrullas-cdmx.png'); 
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: 0.20; 
+            z-index: -1;
+        }
+
+        .container { 
+            max-width: 1200px; 
+            margin: auto; 
+            background: rgba(255, 255, 255, 0.92); 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+            position: relative;
+        }
+
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid var(--oro); padding-bottom: 15px; margin-bottom: 20px; }
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn { padding: 10px 15px; border-radius: 6px; text-decoration: none; color: white; font-weight: bold; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer; }
+        .btn-add { background: var(--guinda); }
+        .btn-users { background: #2c3e50; } 
+        .btn-logos { background: var(--oro); }
+        .btn-types { background: #444; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+        th { background: var(--guinda); color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #ddd; }
+        .pdf-link { color: #d32f2f; font-size: 1.4em; }
+        .del-link { color: #666; font-size: 1.4em; margin-left: 10px; }
+        .user-info { font-size: 12px; color: #666; margin-bottom: 5px; text-align: right; }
+        
+        .badge-rol {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            color: white;
+            background: #666;
+            vertical-align: middle;
+        }
+        .bg-admin { background: var(--guinda); }
+
+        /* ESTILOS PARA EL NUEVO PANEL DE PRODUCTIVIDAD */
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid var(--guinda);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-card h3 { margin: 0; color: var(--guinda); font-size: 24px; }
+        .stat-card p { margin: 5px 0 0; color: #666; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="user-info">
+        Conectado como: <strong><?= $_SESSION['usuario_nombre'] ?></strong> 
+        <span class="badge-rol <?= $_SESSION['rol'] == 'admin' ? 'bg-admin' : '' ?>">
+            <?= strtoupper($_SESSION['rol']) ?>
+        </span>
+    </div>
+
+    <div class="stats-container">
+        <div class="stat-card">
+            <h3><?= $hoy_count ?></h3>
+            <p>Reportes Hoy</p>
+        </div>
+        <div class="stat-card" style="border-left-color: var(--oro);">
+            <h3><?= $semana_count ?></h3>
+            <p>Esta Semana</p>
+        </div>
+        <div class="stat-card">
+            <h3><?= $mes_count ?></h3>
+            <p>Este Mes</p>
+        </div>
+    </div>
+
+    <div class="header">
+        <h2 style="color:var(--guinda); margin:0;">UNIDADES CON REVISTA</h2>
+        <div class="btn-group">
+            
+            <?php if ($_SESSION['rol'] === 'admin'): ?>
+                <a href="usuarios.php" class="btn btn-users"><i class="fas fa-users"></i> Usuarios</a>
+                <a href="subir_logos.php" class="btn btn-logos"><i class="fas fa-image"></i> Logos</a>
+                <a href="gestionar_tipos.php" class="btn btn-types"><i class="fas fa-cogs"></i> Gestionar Tipos</a>
+            <?php endif; ?>
+
+            <a href="formulario.php" class="btn btn-add"><i class="fas fa-plus"></i> Nuevo Registro</a>
+            <a href="reportes.php" class="btn" style="background:#b38e5d;"><i class="fas fa-file-alt"></i> Reportes</a>
+            
+            <a href="logout.php" style="color:#d32f2f; text-decoration:none; font-size:12px; font-weight:bold; margin-left:10px;">Cerrar Sesión</a>
+        </div>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th><th>Inventario</th><th>Placa</th><th>Tipo</th><th>Fecha</th><th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php while($row = $res->fetch_assoc()): ?>
+            <tr>
+                <td>#<?= $row['id'] ?></td>
+                <td><strong><?= $row['n_inventario'] ?></strong></td>
+                <td><?= $row['n_placa'] ?></td>
+                <td><span style="background:#eee; padding:3px 8px; border-radius:4px;"><?= strtoupper($row['n_tipo']) ?></span></td>
+                <td><?= isset($row['fecha']) ? date('d/m/y H:i', strtotime($row['fecha'])) : '---' ?></td>
+                <td>
+                    <a href="generar_pdf.php?id=<?= $row['id'] ?>" target="_blank" class="pdf-link"><i class="fas fa-file-pdf"></i></a>
+                    
+                    <?php if ($_SESSION['rol'] === 'admin'): ?>
+                        <a href="index.php?delete=<?= $row['id'] ?>" class="del-link" onclick="return confirm('¿Eliminar registro?')"><i class="fas fa-trash-alt"></i></a>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endwhile; ?>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

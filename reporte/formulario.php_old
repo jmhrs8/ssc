@@ -1,0 +1,130 @@
+<?php
+session_start();
+if (!isset($_SESSION['auth'])) { header("Location: login.php"); exit(); }
+include('config.php');
+
+// Obtenemos los tipos de la base de datos
+$tipos = $conn->query("SELECT * FROM tipos_unidades"); 
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Nuevo Registro - SSC</title>
+    <style>
+        :root { --guinda: #6b1e34; --oro: #b38e5d; }
+        body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
+        .card { max-width: 500px; margin: auto; background: white; padding: 30px; border-radius: 10px; border-top: 5px solid var(--guinda); }
+        h2 { color: var(--guinda); text-align: center; }
+        input, select { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 12px; background: var(--guinda); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        
+        /* Estilos para el ordenador de fotos */
+        #preview-container { 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 10px; 
+            margin: 15px 0; 
+            padding: 10px; 
+            border: 2px dashed var(--oro); 
+            border-radius: 8px; 
+            background: #fafafa;
+            min-height: 50px;
+        }
+        .foto-item { 
+            cursor: move; 
+            border: 2px solid var(--guinda); 
+            border-radius: 4px; 
+            background: #fff; 
+            padding: 2px;
+            position: relative;
+        }
+        .foto-item img { display: block; object-fit: cover; border-radius: 2px; }
+        .foto-item span { 
+            font-size: 8px; 
+            display: block; 
+            text-align: center; 
+            max-width: 80px; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>Nuevo Reporte</h2>
+    <form action="procesar.php" method="POST" enctype="multipart/form-data">
+        <label>No. Inventario:</label> <input type="text" name="n_inventario" required>
+        <label>No. Placa:</label> <input type="text" name="n_placa" required>
+
+        <label>Tipo de Unidad:</label>
+        <select name="n_tipo">
+            <?php
+            if($tipos && $tipos->num_rows > 0) {
+                while($t = $tipos->fetch_assoc()) {
+                    echo "<option value='".$t['nombre']."'>".ucfirst($t['nombre'])."</option>";
+                }
+            } else {
+                echo "<option value='patrulla'>Patrulla (por defecto)</option>";
+            }
+            ?>
+        </select>
+
+        <label>Fotos (Selecciona y arrastra para ordenar):</label> 
+        <input type="file" id="input-fotos" name="fotos[]" multiple required accept="image/*">
+        
+        <div id="preview-container"></div>
+        
+        <input type="hidden" name="orden_imagenes" id="orden_imagenes">
+
+        <button type="submit" class="btn">GUARDAR REPORTE</button>
+        <a href="index.php" style="display:block; text-align:center; margin-top:10px; color:#666;">Volver</a>
+    </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<script>
+    const input = document.getElementById('input-fotos');
+    const preview = document.getElementById('preview-container');
+    const ordenInput = document.getElementById('orden_imagenes');
+
+    input.addEventListener('change', function() {
+        preview.innerHTML = '';
+        const files = Array.from(this.files);
+        
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const div = document.createElement('div');
+                div.className = 'foto-item';
+                div.setAttribute('data-name', file.name);
+                div.innerHTML = `
+                    <img src="${e.target.result}" width="80" height="60">
+                    <span>${file.name}</span>
+                `;
+                preview.appendChild(div);
+                actualizarOrden();
+            }
+            reader.readAsDataURL(file);
+        });
+    });
+
+    // Inicializar el ordenador
+    new Sortable(preview, {
+        animation: 150,
+        onEnd: function() {
+            actualizarOrden();
+        }
+    });
+
+    function actualizarOrden() {
+        const items = Array.from(preview.querySelectorAll('.foto-item'));
+        const ordenNames = items.map(item => item.getAttribute('data-name'));
+        ordenInput.value = JSON.stringify(ordenNames);
+    }
+</script>
+
+</body>
+</html>

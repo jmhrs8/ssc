@@ -1,0 +1,15 @@
+--2026-10-02 10:47:47--  http://www.fpdf.org/en/dl.php?v=186
+Resolviendo www.fpdf.org (www.fpdf.org)... 213.186.33.19
+Conectando con www.fpdf.org (www.fpdf.org)[213.186.33.19]:80... conectado.
+Petición HTTP enviada, esperando respuesta... 301 Moved Permanently
+Ubicación: https://www.fpdf.org/en/dl.php?v=186 [siguiente]
+--2026-10-02 10:47:49--  https://www.fpdf.org/en/dl.php?v=186
+Conectando con www.fpdf.org (www.fpdf.org)[213.186.33.19]:443... conectado.
+Petición HTTP enviada, esperando respuesta... 200 OK
+Longitud: 19 [text/html]
+Guardando como: ‘dl.php?v=186’
+
+dl.php?v=186                                                  0%[                                                                                                                                         ]       0  --.-KB/s               dl.php?v=186                                                100%[========================================================================================================================================>]      19  --.-KB/s    en 0s      
+
+2026-10-02 10:47:49 (32,5 MB/s) - ‘dl.php?v=186’ guardado [19/19]
+
