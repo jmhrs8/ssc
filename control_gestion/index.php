@@ -42,7 +42,7 @@ try {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        body { background-color: #f4f6f9; background-image: linear-gradient(rgba(244, 246, 249, 0.94), rgba(244, 246, 249, 0.94)), url('https://www.transparenttextures.com/patterns/lined-paper-2.png'); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 0.85rem; }
+        body { background-color: #f4f6f9; background-image: linear-gradient(rgba(244, 246, 249, 0.94), rgba(244, 246, 249, 0.94)), url('https://www.transparenttextures.com/patterns/lined-paper-2.png'); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 0.85rem; position: relative; overflow-x: hidden; }
         .navbar-ssc { background-color: #861532; color: white; padding: 0.4rem 1rem; }
         .card-ssc { border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 0.75rem; }
         .visor-container { background-color: #4e4e4e; border-radius: 4px; padding: 0; overflow: hidden; }
@@ -71,9 +71,29 @@ try {
             border: 2px solid #861532;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
+
+        /* ESTILOS PARA ELEMENTOS FLOTANTES DE TEMPORADA */
+        .elemento-flotante {
+            position: fixed;
+            top: -50px;
+            z-index: 9999;
+            user-select: none;
+            pointer-events: none;
+            animation: caidaLibre linear infinite;
+        }
+        @keyframes caidaLibre {
+            0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 0.9;
+            }
+            100% {
+                transform: translateY(105vh) rotate(360deg);
+                opacity: 0.2;
+            }
+        }
     </style>
 </head>
-<body onload="cargarRegistros()">
+<body onload="cargarRegistros(); iniciarTemporadaFlotante();">
 
 <nav class="navbar navbar-ssc navbar-expand-lg mb-2">
     <div class="container-fluid">
@@ -222,7 +242,7 @@ try {
                     <label class="form-label fw-bold mb-0">Servidor Público Asignado:</label>
                     <select id="id_usuario_asignado" name="id_usuario_asignado" class="form-select form-select-sm" required>
                         <option value="">-- Seleccionar --</option>
-                        <?php foreach($usuarios as $u): ?>
+                        <?php foreach($usuarios as$u): ?>
                             <option value="<?php echo $u['id_usuario']; ?>"><?php echo htmlspecialchars($u['nombre_completo']); ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -253,7 +273,7 @@ try {
                     <label class="form-label fw-bold mb-0 text-dark"><i class="fa-solid fa-building-flag me-1 text-danger"></i>Área / Turnado por:</label>
                     <select id="id_turnado_por" name="id_turnado_por" class="form-select form-select-sm fw-bold" required>
                         <option value="">-- Seleccionar --</option>
-                        <?php foreach($cat_areas as $area): ?>
+                        <?php foreach($cat_areas as$area): ?>
                             <option value="<?php echo $area['id_area']; ?>"><?php echo htmlspecialchars($area['nombre_area']); ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -303,7 +323,7 @@ try {
 
                 <label class="form-label fw-bold">Rol:</label>
                 <select name="rol" id="edit_rol" class="form-select mb-2" required>
-                    <?php foreach($cat_roles as $rol_item): ?>
+                    <?php foreach($cat_roles as$rol_item): ?>
                         <option value="<?php echo htmlspecialchars($rol_item); ?>"><?php echo htmlspecialchars($rol_item); ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -341,6 +361,53 @@ try {
     let modalEditObj = document.getElementById('modalEditarUsuario') ? new bootstrap.Modal(document.getElementById('modalEditarUsuario')) : null;
 
     let registrosGlobales = [];
+
+    // ==========================================
+    // MÓDULO INTELIGENTE DE ANIMACIONES DE TEMPORADA
+    // ==========================================
+    function iniciarTemporadaFlotante() {
+        const ahora = new Date();
+        const mes = ahora.getMonth() + 1; // 1 a 12
+        const dia = ahora.getDate();
+
+        let simboloUrl = '';
+
+        // 1. Del 20 de Octubre al 2 de Noviembre (Día de Muertos -> Flores de Cempasúchil / Papel picado)
+        if ((mes === 10 && dia >= 20) || (mes === 11 && dia <= 2)) {
+            // Usamos un icono representativo en SVG o imagen limpia de flor de cempasúchil / calaverita estilizada
+            simboloUrl = 'https://cdn-icons-png.flaticon.com/512/3223/3223285.html' || '🍁'; // Usaremos emojis o SVGs ligeros para alto rendimiento
+        }
+        // 2. Del 15 de Diciembre al 6 de Enero (Navidad -> Copos de nieve / Estrellas)
+        else if ((mes === 12 && dia >= 15) || (mes === 1 && dia <= 6)) {
+            simboloUrl = '❄';
+        } else {
+            return; // Fuera de temporada, no se muestra nada ni consume recursos.
+        }
+
+        // Generar elementos flotantes cayendo suavemente
+        const cantidad = 15;
+        for (let i = 0; i < cantidad; i++) {
+            let el = document.createElement('div');
+            el.className = 'elemento-flotante';
+            
+            if ((mes === 10 || mes === 11)) {
+                // Iconos o emojis de temporada de Día de Muertos (Flores y papel picado)
+                el.innerHTML = ['🌼', '🌸', '🍂'][Math.floor(Math.random() * 3)];
+                el.style.fontSize = (Math.random() * 14 + 14) + 'px';
+            } else {
+                // Copos de nieve navideños
+                el.innerHTML = ['❄', '❅', '❆'][Math.floor(Math.random() * 3)];
+                el.style.fontSize = (Math.random() * 12 + 10) + 'px';
+                el.style.color = '#0dcaf0';
+            }
+
+            el.style.left = Math.random() * 95 + 'vw';
+            el.style.animationDuration = (Math.random() * 6 + 6) + 's'; // Velocidad de caída variable
+            el.style.animationDelay = (Math.random() * 5) + 's';
+            
+            document.body.appendChild(el);
+        }
+    }
 
     function cargarRegistros() {
         let busqueda = document.getElementById('txt_buscar').value;
