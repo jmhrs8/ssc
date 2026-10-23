@@ -37,7 +37,7 @@ $res = $conn->query("SELECT * FROM reportes ORDER BY id DESC");
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Sistema Para revista SSC - Panel de Control</title>
+    <title>Sistema siniestros SSC - Panel de Control</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root { --guinda: #6b1e34; --oro: #b38e5d; }
@@ -142,7 +142,7 @@ $res = $conn->query("SELECT * FROM reportes ORDER BY id DESC");
     </div>
 
     <div class="header">
-        <h2 style="color:var(--guinda); margin:0;">UNIDADES CON REVISTA</h2>
+        <h2 style="color:var(--guinda); margin:0;">UNIDADES SINIESTRADAS </h2>
         <div class="btn-group">
             
             <?php if ($_SESSION['rol'] === 'admin'): ?>

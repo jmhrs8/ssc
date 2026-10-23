@@ -17,13 +17,14 @@ try {
     // 5. Estatus de Seguro (En barras)
     $statusSeguro = $pdo->query("SELECT status_seguro, COUNT(*) as total FROM inventario_armas WHERE status_seguro != '' GROUP BY status_seguro ORDER BY total DESC")->fetchAll(PDO::FETCH_ASSOC);
 
-    // 6. Totales Globales (Cálculos específicos)
+    // 6. Totales Globales (Cálculos específicos y pendientes de seguro)
     $totales = $pdo->query("SELECT
         SUM(CAST(armas AS UNSIGNED)) as total_armas,
         SUM(CAST(cartuchos AS UNSIGNED)) as total_cartuchos,
         SUM(importe_convenio) as gran_total_dinero,
         (SELECT COUNT(*) FROM inventario_armas WHERE tipo_bien LIKE '%CANINO%') as total_caninos,
-        (SELECT COUNT(*) FROM inventario_armas WHERE tipo_bien LIKE '%EQUINO%') as total_equinos
+        (SELECT COUNT(*) FROM inventario_armas WHERE tipo_bien LIKE '%EQUINO%') as total_equinos,
+        (SELECT COUNT(*) FROM inventario_armas WHERE status_seguro = '' OR status_seguro IS NULL OR status_seguro LIKE '%PENDIENTE%') as total_pendientes_seguro
         FROM inventario_armas")->fetch(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
@@ -48,7 +49,14 @@ try {
         .stat-value { font-size: 24px; font-weight: 800; display: block; }
         .bg-money { background: linear-gradient(45deg, #198754, #2ecc71); color: white; }
         .bg-purple { background: linear-gradient(45deg, #6610f2, #a55eea); color: white; }
+        .bg-warning-custom { background: linear-gradient(45deg, #ffc107, #ff9800); color: #212529; border-top-color: #ffc107; }
         .chart-container { position: relative; height: 400px; width: 100%; padding: 10px; }
+        
+        @media print {
+            .header-report .btn, .btn { display: none !important; }
+            body { background: white !important; }
+            .card { box-shadow: none !important; border: 1px solid #ddd !important; }
+        }
     </style>
 </head>
 <body>
@@ -60,8 +68,10 @@ try {
             <span class="text-info opacity-75">Armamento, Caninos y Equinos</span>
         </div>
         <div>
-            <!-- BOTÓN AÑADIDO PARA ACCEDER AL REPORTE DINÁMICO Y EXPORTACIÓN -->
+            <!-- BOTONES DE ACCIÓN, EXPORTACIÓN E IMPRESIÓN -->
+            <a href="exportar_excel_aseguradora.php" class="btn btn-warning btn-sm me-2 fw-bold"><i class="fas fa-file-excel me-1"></i> EXCEL POR ASEGURADORA</a>
             <a href="reporte_dinamico.php" class="btn btn-success btn-sm me-2"><i class="fas fa-file-excel me-1"></i> FILTROS Y EXPORTAR</a>
+            <button onclick="window.print()" class="btn btn-info btn-sm me-2 text-white"><i class="fas fa-print me-1"></i> IMPRIMIR</button>
             <a href="index.php" class="btn btn-outline-light btn-sm"><i class="fas fa-undo me-1"></i> REGRESAR</a>
         </div>
     </div>
@@ -87,16 +97,22 @@ try {
                 <span class="stat-value text-white"><?= number_format($totales['total_equinos'] ?? 0) ?></span>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
             <div class="card stat-card p-3" style="border-top-color: #fd7e14;">
                 <small class="text-muted">CARTUCHOS</small>
                 <span class="stat-value text-warning"><?= number_format($totales['total_cartuchos'] ?? 0) ?></span>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
+            <div class="card stat-card p-3 bg-warning-custom shadow">
+                <small class="fw-bold text-dark">PENDIENTES SEGURO</small>
+                <span class="stat-value text-dark"><?= number_format($totales['total_pendientes_seguro'] ?? 0) ?></span>
+            </div>
+        </div>
+        <div class="col-md-2">
             <div class="card bg-money p-3 shadow text-center">
                 <small class="fw-bold">MONTO TOTAL CONVENIO</small>
-                <div class="stat-value">$ <?= number_format($totales['gran_total_dinero'] ?? 0, 2) ?></div>
+                <div class="stat-value" style="font-size: 16px;">$ <?= number_format($totales['gran_total_dinero'] ?? 0, 2) ?></div>
             </div>
         </div>
     </div>
@@ -170,7 +186,7 @@ try {
         scales: {
             y: {
                 beginAtZero: true,
-                grace: '20%', // Da espacio extra arriba de la barra más alta
+                grace: '20%', 
                 grid: { color: '#f0f0f0' }
             },
             x: { grid: { display: false } }
