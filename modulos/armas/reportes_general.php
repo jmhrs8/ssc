@@ -105,7 +105,7 @@ try {
         </div>
         <div class="col-md-2">
             <div class="card stat-card p-3 bg-warning-custom shadow">
-                <small class="fw-bold text-dark">PENDIENTES SEGURO</small>
+                <small class="fw-bold text-dark">PENDIENTES ASEGURADORAS</small>
                 <span class="stat-value text-dark"><?= number_format($totales['total_pendientes_seguro'] ?? 0) ?></span>
             </div>
         </div>
