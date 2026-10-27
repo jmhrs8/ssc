@@ -3,12 +3,12 @@ require_once "../../config/conexion.php";
 
 // Forzar la descarga del archivo como Excel
 header("Content-Type: application/vnd.ms-excel; charset=utf-8");
-header("Content-Disposition: attachment; filename=reporte_solo_pendientes_todas_aseguradoras_" . date('Y-m-d') . ".xls");
+header("Content-Disposition: attachment; filename=reporte_pendientes_y_espera_por_aseguradora_" . date('Y-m-d') . ".xls");
 header("Pragma: no-cache");
 header("Expires: 0");
 
 try {
-    // 1. Obtener todas las aseguradoras registradas
+    // 1. Obtener la lista de aseguradoras únicas registradas
     $aseguradoras = $pdo->query("SELECT DISTINCT aseguradora FROM inventario_armas WHERE aseguradora != '' AND aseguradora IS NOT NULL ORDER BY aseguradora ASC")->fetchAll(PDO::FETCH_COLUMN);
 ?>
 <html lang="es">
@@ -25,41 +25,41 @@ try {
     </style>
 </head>
 <body>
-    <h2>REPORTE EXCLUSIVO DE PENDIENTES - TODAS LAS ASEGURADORAS</h2>
+    <h2>REPORTE DE PENDIENTES Y EN ESPERA DE RESOLUCIÓN POR ASEGURADORA</h2>
     
     <?php 
     $total_encontrados = 0;
     foreach ($aseguradoras as $aseg): 
-        // 2. Filtrar estrictamente solo los registros pendientes, vacíos o nulos de cada aseguradora
-        $stmt = $pdo->prepare("SELECT * FROM inventario_armas WHERE aseguradora = ? AND (status_seguro LIKE '%PENDIENTE%' OR status_seguro = '' OR status_seguro IS NULL)");
+        // 2. Consulta filtrando estrictamente por status_tramite (PENDIENTE, EN ESPERA DE RESOLUCION, vacíos o nulos)
+        $stmt = $pdo->prepare("SELECT * FROM inventario_armas WHERE aseguradora = ? AND (status_tramite LIKE '%PENDIENTE%' OR status_tramite LIKE '%ESPERA DE RESOLUCION%' OR status_tramite = '' OR status_tramite IS NULL)");
         $stmt->execute([$aseg]);
         $registros = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Si esta aseguradora no tiene registros pendientes, se omite para mostrar únicamente los pendientes reales
+        // Si esta aseguradora no cuenta con registros en estos estatus, se omite
         if (empty($registros)) continue;
         
         $total_encontrados += count($registros);
     ?>
-        <h3>ASEGURADORA: <?= htmlspecialchars($aseg) ?> (PENDIENTES: <?= count($registros) ?>)</h3>
+        <h3>ASEGURADORA: <?= htmlspecialchars($aseg) ?> (TOTAL: <?= count($registros) ?>)</h3>
         <table>
             <thead>
                 <tr>
                     <th>ASEGURADORA</th>
                     <th>FECHA_SINIESTRO_1</th>
                     <th>FECHA_RECLAMACION</th>
-                    <th>STATUS_SEGURO</th>
+                    <th>STATUS_TRAMITE</th>
                     <th>NO_SINIESTRO</th>
                     <th>TIPO_BIEN</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($registros as $row): 
-                    // Mapeo flexible de nombres de columnas
+                    // Mapeo flexible de columnas para evitar fallos
                     $f_siniestro = $row['fecha_siniestro_1'] ?? $row['fecha_siniestro'] ?? $row['fecha'] ?? '';
                     $f_reclamacion = $row['fecha_reclamacion'] ?? $row['fecha_reclama'] ?? '';
                     if (empty($f_reclamacion)) $f_reclamacion = 'S/F';
                     
-                    $status = !empty(trim($row['status_seguro'])) ? $row['status_seguro'] : 'PENDIENTE';
+                    $status = !empty(trim($row['status_tramite'])) ? $row['status_tramite'] : 'PENDIENTE';
                     $no_siniestro = $row['no_siniestro'] ?? $row['no_siniestro_aseg'] ?? '';
                     $tipo_bien = $row['tipo_bien'] ?? $row['tipo'] ?? '';
                 ?>
@@ -77,7 +77,7 @@ try {
     <?php endforeach; 
 
     if ($total_encontrados === 0) {
-        echo "<p style='color: red; font-weight: bold;'>No se encontraron registros pendientes en ninguna aseguradora.</p>";
+        echo "<p style='color: red; font-weight: bold;'>No se encontraron registros pendientes o en espera de resolución en ninguna aseguradora.</p>";
     }
     ?>
 

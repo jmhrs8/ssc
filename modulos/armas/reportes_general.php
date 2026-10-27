@@ -24,7 +24,7 @@ try {
         SUM(importe_convenio) as gran_total_dinero,
         (SELECT COUNT(*) FROM inventario_armas WHERE tipo_bien LIKE '%CANINO%') as total_caninos,
         (SELECT COUNT(*) FROM inventario_armas WHERE tipo_bien LIKE '%EQUINO%') as total_equinos,
-        (SELECT COUNT(*) FROM inventario_armas WHERE status_seguro = '' OR status_seguro IS NULL OR status_seguro LIKE '%PENDIENTE%') as total_pendientes_seguro
+        (SELECT COUNT(*) FROM inventario_armas WHERE status_tramite LIKE '%PENDIENTE%' OR status_tramite LIKE '%ESPERA DE RESOLUCION%') as total_pendientes_seguro
         FROM inventario_armas")->fetch(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
