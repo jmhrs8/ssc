@@ -1,0 +1,315 @@
+<?php
+session_start();
+$host = 'localhost';
+$db   = 'cafeteria_pos';
+$user = 'root';
+$pass = 'jmhl2474';
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+    ]);
+} catch (\PDOException $e) {
+    die("Error de conexión a la Base de Datos: " . $e->getMessage());
+}
+
+if (isset($_GET['login_as'])) {
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+    $stmt->execute([$_GET['login_as']]);
+    $user_data = $stmt->fetch();
+    if ($user_data) {
+        $_SESSION['user'] = $user_data;
+        header("Location: index.php");
+        exit;
+    }
+}
+
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header("Location: index.php");
+    exit;
+}
+
+$current_user = $_SESSION['user'] ?? null;
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Café Lumière - Sistema POS & KDS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), url('https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=1920&q=80') no-repeat center center fixed;
+            background-size: cover;
+            font-family: 'Inter', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .card-deck {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-deck:hover {
+            transform: translateY(-6px) scale(1.02);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col">
+
+    <!-- HEADER -->
+    <header class="glass-panel border-b border-slate-700/50 sticky top-0 z-50 px-6 py-4 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-3">
+            <div class="bg-amber-500/20 p-2.5 rounded-xl border border-amber-500/30 text-amber-400 text-2xl">
+                <i class="fa-solid fa-mug-hot"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-wide text-amber-400">Café Lumière POS</h1>
+                <p class="text-xs text-slate-400">Sistema Profesional de Cafetería & KDS</p>
+            </div>
+        </div>
+
+        <?php if ($current_user): ?>
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-3 bg-slate-800/80 px-4 py-2 rounded-full border border-slate-700">
+                <img src="<?= htmlspecialchars($current_user['photo']) ?>" alt="Avatar" class="w-9 h-9 rounded-full object-cover border-2 border-amber-500 shadow">
+                <div>
+                    <p class="text-sm font-semibold text-slate-200"><?= htmlspecialchars($current_user['name']) ?></p>
+                    <span class="text-xs uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold"><?= $current_user['role'] ?></span>
+                </div>
+            </div>
+            <a href="?logout=true" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 px-4 py-2 rounded-xl border border-rose-500/30 text-sm font-semibold transition flex items-center space-x-2">
+                <i class="fa-solid fa-power-off"></i> <span>Salir</span>
+            </a>
+        </div>
+        <?php endif; ?>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow container mx-auto px-4 py-8 max-w-7xl">
+
+        <?php if (!$current_user): ?>
+            <div class="max-w-4xl mx-auto mt-16 text-center">
+                <h2 class="text-3xl font-extrabold text-white mb-2">Bienvenido al Sistema</h2>
+                <p class="text-slate-400 mb-10">Selecciona tu perfil de acceso para iniciar turno:</p>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <?php
+                    $users = $pdo->query("SELECT * FROM users")->fetchAll();
+                    foreach ($users as $u):
+                    ?>
+                    <a href="?login_as=<?= $u['id'] ?>" class="glass-panel card-deck p-6 rounded-2xl flex flex-col items-center group cursor-pointer border border-slate-700 hover:border-amber-500">
+                        <img src="<?= htmlspecialchars($u['photo']) ?>" class="w-24 h-24 rounded-full object-cover border-4 border-slate-700 group-hover:border-amber-400 shadow-lg mb-4 transition">
+                        <h3 class="text-lg font-bold text-slate-100 group-hover:text-amber-400 transition"><?= htmlspecialchars($u['name']) ?></h3>
+                        <span class="text-xs uppercase tracking-wider bg-slate-800 text-amber-300 px-3 py-1 rounded-full mt-2 font-semibold border border-slate-700"><?= $u['role'] ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php else: ?>
+
+            <!-- TABS NAVIGATION -->
+            <div class="flex flex-wrap gap-4 mb-8 justify-between items-center">
+                <div class="flex space-x-3">
+                    <button onclick="switchTab('pos')" id="btn-tab-pos" class="tab-btn bg-amber-500 text-slate-950 font-bold px-6 py-2.5 rounded-xl shadow-lg transition flex items-center space-x-2">
+                        <i class="fa-solid fa-cash-register"></i> <span>Punto de Venta</span>
+                    </button>
+                    <button onclick="switchTab('kds')" id="btn-tab-kds" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
+                        <i class="fa-solid fa-utensils"></i> <span>Cocina / KDS</span>
+                    </button>
+                    <?php if ($current_user['role'] === 'admin'): ?>
+                    <button onclick="switchTab('reports')" id="btn-tab-reports" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
+                        <i class="fa-solid fa-chart-pie"></i> <span>Reportes</span>
+                    </button>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- POS TAB -->
+            <div id="tab-pos" class="tab-content grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-bold text-amber-400 flex items-center space-x-2">
+                                <i class="fa-solid fa-chair"></i> <span>Mesas y Salón</span>
+                            </h3>
+                            <button onclick="addNewTablePrompt()" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1">
+                                <i class="fa-solid fa-plus"></i> <span>Nueva Mesa</span>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                            <?php
+                            $tables = $pdo->query("SELECT * FROM tables")->fetchAll();
+                            foreach ($tables as $t):
+                                $bg_status = $t['status'] == 'libre' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/40 bg-rose-500/10 text-rose-300';
+                            ?>
+                            <div class="glass-panel card-deck p-4 rounded-xl border <?= $bg_status ?> flex flex-col justify-between cursor-pointer" onclick="selectTable(<?= $t['id'] ?>, '<?= $t['table_number'] ?>', '<?= $t['status'] ?>')">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-bold text-slate-100"><?= $t['table_number'] ?></span>
+                                    <span class="text-xs uppercase px-2 py-0.5 rounded bg-slate-900/80 font-bold"><?= $t['status'] ?></span>
+                                </div>
+                                <div class="mt-4 flex justify-between items-center text-xs text-slate-400">
+                                    <span><i class="fa-solid fa-users mr-1"></i> Cap: <?= $t['capacity'] ?></span>
+                                    <span><?= $t['zone'] ?></span>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl">
+                        <h3 class="text-lg font-bold text-amber-400 mb-4 flex items-center space-x-2">
+                            <i class="fa-solid fa-burger"></i> <span>Catálogo de Alimentos y Bebidas</span>
+                        </h3>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[450px] overflow-y-auto pr-2">
+                            <?php
+                            $products = $pdo->query("SELECT * FROM products")->fetchAll();
+                            foreach ($products as $p):
+                            ?>
+                            <div class="glass-panel card-deck p-3 rounded-xl border border-slate-700 flex flex-col justify-between cursor-pointer group" onclick="addToTicket(<?= $p['id'] ?>, '<?= htmlspecialchars($p['name']) ?>', <?= $p['price'] ?>)">
+                                <div>
+                                    <img src="<?= htmlspecialchars($p['image']) ?>" class="w-full h-28 object-cover rounded-lg mb-2 group-hover:scale-105 transition">
+                                    <h4 class="text-sm font-semibold text-slate-200 line-clamp-1"><?= htmlspecialchars($p['name']) ?></h4>
+                                    <span class="text-xs text-slate-400"><?= $p['category'] ?></span>
+                                </div>
+                                <div class="mt-3 flex justify-between items-center">
+                                    <span class="text-amber-400 font-bold">$<?= number_format($p['price'], 2) ?></span>
+                                    <span class="bg-amber-500 text-slate-950 p-1.5 rounded-lg text-xs font-bold shadow"><i class="fa-solid fa-plus"></i></span>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-6 rounded-2xl shadow-xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-center mb-4 border-b border-slate-700/60 pb-3">
+                            <h3 class="text-lg font-bold text-amber-400 flex items-center space-x-2">
+                                <i class="fa-solid fa-receipt"></i> <span>Comanda Activa</span>
+                            </h3>
+                            <span id="active-target-badge" class="text-xs bg-slate-800 px-3 py-1 rounded-full text-amber-300 font-semibold border border-slate-700">Para Llevar / Libre</span>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="block text-xs text-slate-400 mb-1">Nombre del Cliente (Opcional)</label>
+                            <input type="text" id="takeout-client-name" placeholder="Ej. Ana Pérez" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+                        </div>
+
+                        <div id="ticket-items-container" class="space-y-3 max-h-[250px] overflow-y-auto pr-2 mb-4" data-active-order-id="">
+                            <p class="text-center text-sm text-slate-500 py-8">Ningún producto agregado.</p>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-700/60 pt-4 space-y-3">
+                        <div class="flex justify-between text-sm text-slate-300">
+                            <span>Subtotal:</span>
+                            <span id="ticket-subtotal">$0.00</span>
+                        </div>
+                        <div class="flex justify-between text-sm text-slate-300">
+                            <span>IVA (16%):</span>
+                            <span id="ticket-iva">$0.00</span>
+                        </div>
+                        <div class="flex justify-between text-lg font-extrabold text-amber-400 border-t border-slate-700 pt-2">
+                            <span>Total a Pagar:</span>
+                            <span id="ticket-total">$0.00</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 pt-2">
+                            <button onclick="sendOrderToKitchen()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
+                                <i class="fa-solid fa-bell-concierge"></i> <span>Enviar Cocina</span>
+                            </button>
+                            <button onclick="processCheckout()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
+                                <i class="fa-solid fa-cash-register"></i> <span>Cobrar</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KDS TAB -->
+            <div id="tab-kds" class="tab-content hidden space-y-6">
+                <div class="glass-panel p-6 rounded-2xl shadow-xl">
+                    <h3 class="text-xl font-bold text-amber-400 mb-6 flex items-center space-x-2">
+                        <i class="fa-solid fa-utensils"></i> <span>Kitchen Display System (KDS)</span>
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="kds-orders-container">
+                        <div class="text-center py-12 text-slate-500">Cargando órdenes de cocina...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- REPORTS TAB -->
+            <?php if ($current_user['role'] === 'admin'): ?>
+            <div id="tab-reports" class="tab-content hidden space-y-6">
+                <div class="glass-panel p-6 rounded-2xl shadow-xl">
+                    <h3 class="text-lg font-bold text-amber-400 mb-4">Comportamiento de Ventas</h3>
+                    <canvas id="salesChart" height="100"></canvas>
+                </div>
+            </div>
+            <?php endif; ?>
+
+        <?php endif; ?>
+
+    </main>
+
+    <footer class="glass-panel border-t border-slate-700/50 py-4 text-center text-xs text-slate-400 mt-auto">
+        Café Lumière POS &copy; <?= date('Y') ?> - Trazabilidad Total
+    </footer>
+
+    <!-- SCRIPT DE LÓGICA VINCULADO -->
+    <script src="app.js"></script>
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('bg-amber-500', 'text-slate-950', 'font-bold');
+                el.classList.add('glass-panel', 'text-slate-300');
+            });
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            const activeBtn = document.getElementById('btn-tab-' + tabId);
+            activeBtn.classList.remove('glass-panel', 'text-slate-300');
+            activeBtn.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
+            if(tabId === 'kds') loadKDSOrders();
+        }
+
+        async function addNewTablePrompt() {
+            let num = prompt("Número o nombre de la mesa (Ej. Mesa 05):");
+            if (!num) return;
+            const res = await fetch('api.php?action=add_table', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({table_number: num})
+            });
+            const data = await res.json();
+            if(data.success) { location.reload(); } else { alert(data.error); }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const ctx = document.getElementById('salesChart');
+            if (ctx) {
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
+                        datasets: [{
+                            label: 'Ventas en MXN ($)',
+                            data: [1800, 2100, 1950, 2400, 3100, 4500, 3900],
+                            borderColor: '#fbbf24',
+                            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                            borderWidth: 3, fill: true, tension: 0.4
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { labels: { color: '#cbd5e1' } } } }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
