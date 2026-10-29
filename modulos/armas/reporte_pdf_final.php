@@ -5,13 +5,45 @@ $id = $_GET['id'] ?? null;
 if (!$id) die("ID NO PROPORCIONADO");
 
 // Consulta que une Inventario (Datos técnicos) y Espejo (Datos de captura)
-$stmt = $pdo->prepare("SELECT a.*, e.* FROM inventario_armas a 
-                       LEFT JOIN espejo_siniestros_armas e ON a.id = e.id_arma 
+$stmt = $pdo->prepare("SELECT a.*, e.* FROM inventario_armas a
+                       LEFT JOIN espejo_siniestros_armas e ON a.id = e.id_arma
                        WHERE a.id = ?");
 $stmt->execute([$id]);
 $d = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$d) die("REGISTRO NO ENCONTRADO");
+
+// Construcción dinámica de la descripción del bien (respetando marca, modelo, serie y accesorios tácticos)
+$tipo_bien_upper = strtoupper($d['tipo_bien'] ?? '');
+$descripcion_bien_text = "";
+
+if (strpos($tipo_bien_upper, 'ARMA') !== false || (!empty($d['armas']) && $d['armas'] > 0)) {
+    $descripcion_bien_text = "TIPO: ARMA DE FUEGO | " . 
+                             (!empty($d['marca']) ? "MARCA: " . $d['marca'] . " " : "") . 
+                             (!empty($d['modelo']) ? "MODELO: " . $d['modelo'] . " " : "") . 
+                             (!empty($d['serie_matricula_1']) ? "MATRÍCULA/SERIE: " . $d['serie_matricula_1'] . " " : "");
+    
+    $accesorios = [];
+    if (!empty($d['armas']) && $d['armas'] > 0) $accesorios[] = "ARMAS: " . $d['armas'];
+    if (!empty($d['cargador']) && $d['cargador'] > 0) $accesorios[] = "CARGADORES: " . $d['cargador'];
+    if (!empty($d['cartuchos']) && $d['cartuchos'] > 0) $accesorios[] = "CARTUCHOS: " . $d['cartuchos'];
+    if (!empty($d['cascos']) && $d['cascos'] > 0) $accesorios[] = "CASCOS: " . $d['cascos'];
+    if (!empty($d['escudos']) && $d['escudos'] > 0) $accesorios[] = "ESCUDOS: " . $d['escudos'];
+    if (!empty($d['chalecos']) && $d['chalecos'] > 0) $accesorios[] = "CHALECOS: " . $d['chalecos'];
+    if (!empty($d['candado_de_manos']) && $d['candado_de_manos'] > 0) $accesorios[] = "CANDADO DE MANOS: " . $d['candado_de_manos'];
+
+    if (!empty($accesorios)) {
+        $descripcion_bien_text .= "<br><b>ACCESORIOS / INVENTARIO:</b> " . implode(' | ', $accesorios);
+    }
+} else {
+    $descripcion_bien_text = (!empty($d['marca']) ? "MARCA: " . $d['marca'] . " " : "") . 
+                             (!empty($d['modelo']) ? "MODELO: " . $d['modelo'] . " " : "") . 
+                             (!empty($d['serie_matricula_1']) ? "SERIE/MATRÍCULA: " . $d['serie_matricula_1'] : "");
+}
+
+if (trim(strip_tags($descripcion_bien_text)) === '') {
+    $descripcion_bien_text = ($d['marca'] ?? '') . " MODELO " . ($d['modelo'] ?? '') . " SERIE: " . ($d['serie_matricula_1'] ?? 'S/N');
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -85,7 +117,7 @@ if (!$d) die("REGISTRO NO ENCONTRADO");
         <tr><td class="bg-head">LUGAR DEL SINIESTRO:</td><td><?= $d['lugar_siniestro'] ?></td></tr>
         <tr>
             <td class="bg-head">DESCRIPCIÓN DEL BIEN:</td>
-            <td><?= $d['marca'] ?> MODELO <?= $d['modelo'] ?> SERIE: <?= $d['serie_matricula_1'] ?></td>
+            <td><?= $descripcion_bien_text ?></td>
         </tr>
     </table>
 
@@ -109,7 +141,7 @@ if (!$d) die("REGISTRO NO ENCONTRADO");
         </tr>
         <tr>
             <td class="bg-head">DESPACHO AJUSTADOR:</td>
-            <td><?= $d['despacho'] ?></td> </tr>
+            <td><?= $d['despacho_ajustador'] ?></td> </tr>
         <tr>
             <td class="bg-head">FECHA / HORA REPORTE:</td>
             <td><?= $d['fecha_reporte'] ?> / <?= $d['hora_reporte'] ?></td>
@@ -130,7 +162,7 @@ if (!$d) die("REGISTRO NO ENCONTRADO");
     </table>
 
     <div style="text-align: center; margin-top: 40px; font-weight: bold; border-top: 1px solid #ccc; padding-top: 10px;">
-        2026 "AÑO DE MARGARITA MAZA" / AÑO MUNDIALISTA
+        SSC "DOCUMENTO DE SEGUIMIENTO" / SUBDIRECCIÓN DE RIESGOS Y ASEGURAMIENTO
     </div>
 
 </body>

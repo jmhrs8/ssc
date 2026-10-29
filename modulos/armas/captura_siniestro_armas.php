@@ -6,8 +6,8 @@ $id = $_GET['id'] ?? null;
 if (!$id) die("ID NO PROPORCIONADO");
 
 // Jalamos TODO: lo técnico del inventario y lo que se haya avanzado en la espejo
-$stmt = $pdo->prepare("SELECT a.id as id_principal, a.*, e.* FROM inventario_armas a 
-                       LEFT JOIN espejo_siniestros_armas e ON a.id = e.id_arma 
+$stmt = $pdo->prepare("SELECT a.id as id_principal, a.*, e.* FROM inventario_armas a
+                       LEFT JOIN espejo_siniestros_armas e ON a.id = e.id_arma
                        WHERE a.id = ?");
 $stmt->execute([$id]);
 $d = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -32,13 +32,13 @@ if (!$d) die("REGISTRO NO ENCONTRADO");
 <div class="container mt-4 mb-5">
     <form action="guardar_siniestro_armas_espejo.php" method="POST">
         <input type="hidden" name="id_arma" value="<?= $d['id_principal'] ?>">
-        
+
         <div class="card shadow">
             <div class="card-header text-center">
                 FORMULARIO DE CAPTURA Y PREVISUALIZACIÓN DE RECLAMO
             </div>
             <div class="card-body">
-                
+
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label>TIPO DE BIEN (SISTEMA)</label>
@@ -125,8 +125,8 @@ if (!$d) die("REGISTRO NO ENCONTRADO");
                         <input type="text" name="no_siniestro_seguro" class="form-control form-control-sm text-primary fw-bold" value="<?= $d['no_siniestro_seguro'] ?? '' ?>">
                     </div>
                     <div class="col-md-4">
-                        <label>DESPACHO AJUSTADOR (DE BASE)</label>
-                        <input type="text" class="form-control form-control-sm bg-fixed" value="<?= $d['despacho'] ?>" readonly>
+                        <label>DESPACHO AJUSTADOR</label>
+                        <input type="text" name="despacho_ajustador" class="form-control form-control-sm" value="<?= $d['despacho_ajustador'] ?? '' ?>">
                     </div>
                     <div class="col-md-4">
                         <label>AJUSTADOR / QUIEN RECIBE</label>

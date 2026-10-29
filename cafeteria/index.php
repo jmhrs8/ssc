@@ -38,7 +38,7 @@ $current_user = $_SESSION['user'] ?? null;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Café Lumière - Sistema POS & KDS</title>
+    <title>Café Tzopelli - POS & Reportes Gerenciales</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -71,8 +71,8 @@ $current_user = $_SESSION['user'] ?? null;
                 <i class="fa-solid fa-mug-hot"></i>
             </div>
             <div>
-                <h1 class="text-xl font-bold tracking-wide text-amber-400">Café Lumière POS</h1>
-                <p class="text-xs text-slate-400">Sistema Profesional de Cafetería & KDS</p>
+                <h1 class="text-xl font-bold tracking-wide text-amber-400">Café Tzopelli</h1>
+                <p class="text-xs text-slate-400">Desayuno y mas</p>
             </div>
         </div>
 
@@ -98,7 +98,7 @@ $current_user = $_SESSION['user'] ?? null;
         <?php if (!$current_user): ?>
             <div class="max-w-4xl mx-auto mt-16 text-center">
                 <h2 class="text-3xl font-extrabold text-white mb-2">Bienvenido al Sistema</h2>
-                <p class="text-slate-400 mb-10">Selecciona tu perfil de acceso para iniciar turno:</p>
+                <p class="text-slate-400 mb-10">Selecciona tu usuario de turno para ingresar:</p>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <?php
                     $users = $pdo->query("SELECT * FROM users")->fetchAll();
@@ -117,27 +117,33 @@ $current_user = $_SESSION['user'] ?? null;
             <!-- TABS NAVIGATION -->
             <div class="flex flex-wrap gap-4 mb-8 justify-between items-center">
                 <div class="flex space-x-3">
+                    <?php if ($current_user['role'] === 'waiter' || $current_user['role'] === 'admin'): ?>
                     <button onclick="switchTab('pos')" id="btn-tab-pos" class="tab-btn bg-amber-500 text-slate-950 font-bold px-6 py-2.5 rounded-xl shadow-lg transition flex items-center space-x-2">
                         <i class="fa-solid fa-cash-register"></i> <span>Punto de Venta</span>
                     </button>
-                    <button onclick="switchTab('kds')" id="btn-tab-kds" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
+                    <?php endif; ?>
+
+                    <?php if ($current_user['role'] === 'kitchen' || $current_user['role'] === 'admin'): ?>
+                    <button onclick="switchTab('kds')" id="btn-tab-kds" class="tab-btn <?= ($current_user['role'] === 'kitchen') ? 'bg-amber-500 text-slate-950 font-bold' : 'glass-panel text-slate-300' ?> px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
                         <i class="fa-solid fa-utensils"></i> <span>Cocina / Barra (KDS)</span>
                     </button>
+                    <?php endif; ?>
+
                     <?php if ($current_user['role'] === 'admin'): ?>
+                    <button onclick="switchTab('reports')" id="btn-tab-reports" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
+                        <i class="fa-solid fa-chart-pie"></i> <span>Reportes y Analítica</span>
+                    </button>
                     <button onclick="switchTab('admin')" id="btn-tab-admin" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
                         <i class="fa-solid fa-gear"></i> <span>Administración</span>
-                    </button>
-                    <button onclick="switchTab('reports')" id="btn-tab-reports" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
-                        <i class="fa-solid fa-chart-pie"></i> <span>Reportes</span>
                     </button>
                     <?php endif; ?>
                 </div>
             </div>
 
             <!-- POS TAB -->
+            <?php if ($current_user['role'] === 'waiter' || $current_user['role'] === 'admin'): ?>
             <div id="tab-pos" class="tab-content space-y-6">
-                <!-- BANNER DE ALERTAS EN TIEMPO REAL PARA MESEROS -->
-                <div id="waiter-alerts-container" class="space-y-2"></div>
+                <div id="waiter-alerts-container" class="space-y-3"></div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div class="lg:col-span-2 space-y-6">
@@ -240,26 +246,75 @@ $current_user = $_SESSION['user'] ?? null;
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
 
             <!-- KDS TAB -->
-            <div id="tab-kds" class="tab-content hidden space-y-6">
+            <?php if ($current_user['role'] === 'kitchen' || $current_user['role'] === 'admin'): ?>
+            <div id="tab-kds" class="tab-content <?= ($current_user['role'] === 'kitchen') ? '' : 'hidden' ?> space-y-6">
                 <div class="glass-panel p-6 rounded-2xl shadow-xl">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-xl font-bold text-amber-400 flex items-center space-x-2">
                             <i class="fa-solid fa-utensils"></i> <span>Kitchen Display System (Cocina y Barra)</span>
                         </h3>
-                        <span class="text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-                            <i class="fa-solid fa-info-circle text-amber-400 mr-1"></i> Marca cada platillo o bebida de forma independiente.
-                        </span>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="kds-orders-container">
-                        <div class="text-center py-12 text-slate-500">Cargando órdenes de cocina...</div>
+                        <div class="text-center py-12 text-slate-500">Cargando comandas pendientes...</div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- REPORTS TAB (ANALÍTICA PARA GERENTE / ADMINISTRADOR) -->
+            <?php if ($current_user['role'] === 'admin'): ?>
+            <div id="tab-reports" class="tab-content hidden space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Top Mesero -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl flex items-center space-x-4 border border-amber-500/30">
+                        <div id="report-top-waiter-photo-container">
+                            <img id="report-top-waiter-photo" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80" class="w-16 h-16 rounded-full object-cover border-2 border-amber-400 shadow">
+                        </div>
+                        <div>
+                            <span class="text-xs uppercase bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded">Mesero Estrella</span>
+                            <h4 id="report-top-waiter-name" class="text-lg font-bold text-white mt-1">Cargando...</h4>
+                            <p id="report-top-waiter-sales" class="text-xs text-slate-300 font-semibold mt-0.5">$0.00 vendidos</p>
+                        </div>
+                    </div>
+
+                    <!-- Gráfica de Ventas por Día de la Semana -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl md:col-span-2">
+                        <h3 class="text-base font-bold text-amber-400 mb-2 flex items-center space-x-2">
+                            <i class="fa-solid fa-chart-column"></i> <span>Ventas por Día de la Semana</span>
+                        </h3>
+                        <div class="h-48">
+                            <canvas id="weeklySalesChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Productos más solicitados -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-4">
+                        <h3 class="text-base font-bold text-amber-400 flex items-center space-x-2 border-b border-slate-700 pb-2">
+                            <i class="fa-solid fa-fire text-orange-400"></i> <span>Productos Más Vendidos / Solicitados</span>
+                        </h3>
+                        <div id="report-top-products-list" class="space-y-3">
+                            <p class="text-xs text-slate-400">Cargando productos...</p>
+                        </div>
+                    </div>
+
+                    <!-- Tiempos promedio de preparación -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-4">
+                        <h3 class="text-base font-bold text-amber-400 flex items-center space-x-2 border-b border-slate-700 pb-2">
+                            <i class="fa-solid fa-stopwatch text-emerald-400"></i> <span>Tiempo Promedio de Preparación (Cocina/Barra)</span>
+                        </h3>
+                        <div id="report-prep-times-list" class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                            <p class="text-xs text-slate-400">Cargando tiempos...</p>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- ADMIN TAB -->
-            <?php if ($current_user['role'] === 'admin'): ?>
             <div id="tab-admin" class="tab-content hidden space-y-8">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-6">
@@ -279,7 +334,7 @@ $current_user = $_SESSION['user'] ?? null;
                     <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-6">
                         <div class="flex justify-between items-center border-b border-slate-700 pb-3">
                             <h3 class="text-lg font-bold text-amber-400 flex items-center space-x-2">
-                                <i class="fa-solid fa-boxes-stacked"></i> <span>Catálogo y Precios (Alimentos/Bebidas)</span>
+                                <i class="fa-solid fa-boxes-stacked"></i> <span>Catálogo Alimentos/Bebidas</span>
                             </h3>
                             <button onclick="addNewProduct()" class="bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center space-x-1 shadow hover:bg-amber-400 transition">
                                 <i class="fa-solid fa-plus"></i> <span>Nuevo Producto</span>
@@ -291,14 +346,6 @@ $current_user = $_SESSION['user'] ?? null;
                     </div>
                 </div>
             </div>
-
-            <!-- REPORTS TAB -->
-            <div id="tab-reports" class="tab-content hidden space-y-6">
-                <div class="glass-panel p-6 rounded-2xl shadow-xl">
-                    <h3 class="text-lg font-bold text-amber-400 mb-4">Comportamiento de Ventas Semanales</h3>
-                    <canvas id="salesChart" height="100"></canvas>
-                </div>
-            </div>
             <?php endif; ?>
 
         <?php endif; ?>
@@ -306,7 +353,7 @@ $current_user = $_SESSION['user'] ?? null;
     </main>
 
     <footer class="glass-panel border-t border-slate-700/50 py-4 text-center text-xs text-slate-400 mt-auto">
-        Café Lumière POS &copy; <?= date('Y') ?> - Trazabilidad Total
+        Diseñado por jmhrs8@gmail.com; <?= date('Y') ?>
     </footer>
 
     <script src="app.js"></script>
@@ -317,17 +364,21 @@ $current_user = $_SESSION['user'] ?? null;
                 el.classList.remove('bg-amber-500', 'text-slate-950', 'font-bold');
                 el.classList.add('glass-panel', 'text-slate-300');
             });
-            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            const targetContent = document.getElementById('tab-' + tabId);
+            if (targetContent) targetContent.classList.remove('hidden');
             const activeBtn = document.getElementById('btn-tab-' + tabId);
-            activeBtn.classList.remove('glass-panel', 'text-slate-300');
-            activeBtn.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
+            if (activeBtn) {
+                activeBtn.classList.remove('glass-panel', 'text-slate-300');
+                activeBtn.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
+            }
             
             if(tabId === 'kds') loadKDSOrders();
             if(tabId === 'admin') loadAdminData();
+            if(tabId === 'reports') loadManagerReports();
         }
 
         async function addNewTablePrompt() {
-            let num = prompt("Número o nombre de la mesa (Ej. Mesa 05 o Terraza 3):");
+            let num = prompt("Número o nombre de la mesa:");
             if (!num) return;
             const res = await fetch('api.php?action=add_table', {
                 method: 'POST',
@@ -337,26 +388,6 @@ $current_user = $_SESSION['user'] ?? null;
             const data = await res.json();
             if(data.success) { location.reload(); } else { alert(data.error); }
         }
-
-        window.addEventListener('DOMContentLoaded', () => {
-            const ctx = document.getElementById('salesChart');
-            if (ctx) {
-                new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
-                        datasets: [{
-                            label: 'Ventas en MXN ($)',
-                            data: [1800, 2100, 1950, 2400, 3100, 4500, 3900],
-                            borderColor: '#fbbf24',
-                            backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                            borderWidth: 3, fill: true, tension: 0.4
-                        }]
-                    },
-                    options: { responsive: true, plugins: { legend: { labels: { color: '#cbd5e1' } } } }
-                });
-            }
-        });
     </script>
 </body>
 </html>

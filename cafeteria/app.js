@@ -1,13 +1,26 @@
 let currentActiveTable = null;
 let activeTicketItems = [];
+let weeklySalesChartInstance = null;
 
-// Refresco automático del KDS cada 5 segundos
+// Cargar reportes al iniciar si la pestaña de reportes está activa
+document.addEventListener("DOMContentLoaded", () => {
+    const reportsTab = document.getElementById('tab-reports');
+    if (reportsTab && !reportsTab.classList.contains('hidden')) {
+        loadManagerReports();
+    }
+});
+
+// Refrescar KDS y alertas automáticamente cada 3 segundos
 setInterval(() => {
     const kdsTab = document.getElementById('tab-kds');
     if (kdsTab && !kdsTab.classList.contains('hidden')) {
         loadKDSOrders();
     }
-}, 5000);
+    const posTab = document.getElementById('tab-pos');
+    if (posTab && !posTab.classList.contains('hidden')) {
+        checkReadyItemsForWaiters();
+    }
+}, 3000);
 
 function selectTable(id, name, status) {
     currentActiveTable = { id, name, status };
@@ -59,6 +72,8 @@ function addToTicket(id, name, price) {
 
 function renderTicketUI(existingOrderId = null) {
     const container = document.getElementById('ticket-items-container');
+    if (!container) return;
+    
     if (activeTicketItems.length === 0) {
         container.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">Ningún producto seleccionado.</p>`;
         document.getElementById('ticket-subtotal').innerText = '$0.00';
@@ -130,13 +145,8 @@ async function sendOrderToKitchen() {
         const data = await res.json();
 
         if (data.success) {
-            alert('¡Enviado a cocina y barra con éxito!');
-            if (currentActiveTable) {
-                selectTable(currentActiveTable.id, currentActiveTable.name, 'ocupada');
-            } else {
-                activeTicketItems = [];
-                renderTicketUI();
-            }
+            alert('¡Enviado a cocina y mesa ocupada con éxito!');
+            location.reload();
         } else {
             alert('Error: ' + data.error);
         }
@@ -145,15 +155,16 @@ async function sendOrderToKitchen() {
     }
 }
 
-// Cargar KDS (Cocina y Barra por platillo individual)
+// KDS
 async function loadKDSOrders() {
     try {
         const res = await fetch('api.php?action=get_kds_orders');
         const data = await res.json();
         const container = document.getElementById('kds-orders-container');
+        if (!container) return;
 
         if (!data.success || data.orders.length === 0) {
-            container.innerHTML = `<div class="col-span-3 text-center py-12 text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-2xl mb-2 block text-emerald-500"></i> No hay pedidos pendientes.</div>`;
+            container.innerHTML = `<div class="col-span-3 text-center py-12 text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-2xl mb-2 block text-emerald-500"></i> No hay comensales pendientes en cocina o barra.</div>`;
             return;
         }
 
@@ -179,7 +190,7 @@ async function loadKDSOrders() {
                                     <span><strong class="text-amber-400">${i.quantity}x</strong> ${i.product_name}</span>
                                     ${i.item_status === 'listo' 
                                         ? '<span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold">Listo</span>'
-                                        : `<button onclick="markItemReady(${i.item_id})" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1 rounded text-xs transition">Marcar Listo</button>`
+                                        : `<button onclick="markItemReady(${i.item_id}, ${ord.order_id})" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1 rounded text-xs transition shadow">Marcar Listo</button>`
                                     }
                                 </li>
                             `).join('')}
@@ -195,12 +206,12 @@ async function loadKDSOrders() {
     }
 }
 
-async function markItemReady(itemId) {
+async function markItemReady(itemId, orderId) {
     try {
         const res = await fetch('api.php?action=update_item_status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ item_id: itemId, status: 'listo' })
+            body: JSON.stringify({ item_id: itemId, order_id: orderId, status: 'listo' })
         });
         const data = await res.json();
         if (data.success) {
@@ -211,7 +222,163 @@ async function markItemReady(itemId) {
     }
 }
 
-// COBRO CON VISTA PREVIA DE TICKET EN MINIATURA
+async function checkReadyItemsForWaiters() {
+    try {
+        const res = await fetch('api.php?action=get_ready_items_for_waiters');
+        const data = await res.json();
+        const alertContainer = document.getElementById('waiter-alerts-container');
+        if (!alertContainer) return;
+
+        if (!data.success || data.ready_items.length === 0) {
+            alertContainer.innerHTML = '';
+            return;
+        }
+
+        let readyAlertsHtml = '';
+        data.ready_items.forEach(item => {
+            const targetLabel = item.table_number ? `Mesa: ${item.table_number}` : `Para Llevar: ${item.client_name}`;
+            readyAlertsHtml += `
+                <div class="glass-panel bg-emerald-500/20 border border-emerald-500/50 p-4 rounded-2xl flex justify-between items-center shadow-lg animate-pulse">
+                    <div class="flex items-center space-x-3">
+                        <div class="bg-emerald-500 text-slate-950 p-2.5 rounded-xl font-bold">
+                            <i class="fa-solid fa-bell-concierge text-lg"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-emerald-300 text-sm">¡PRODUCTO LISTO EN BARRA / COCINA!</h4>
+                            <p class="text-xs text-slate-100 font-semibold mt-0.5">
+                                <span class="text-amber-300">${item.quantity}x ${item.product_name}</span> para <span class="text-amber-300">${targetLabel}</span>
+                            </p>
+                            <p class="text-[11px] text-slate-300 mt-0.5">Mesero: ${item.waiter_name}</p>
+                        </div>
+                    </div>
+                    <button onclick="dismissReadyAlert(${item.item_id})" class="text-xs bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3 py-2 rounded-xl shadow transition whitespace-nowrap ml-4">
+                        <i class="fa-solid fa-check mr-1"></i> Entendido / Recogido
+                    </button>
+                </div>
+            `;
+        });
+
+        alertContainer.innerHTML = readyAlertsHtml;
+    } catch (e) {
+        console.error("Error al verificar ítems listos:", e);
+    }
+}
+
+async function dismissReadyAlert(itemId) {
+    try {
+        const res = await fetch('api.php?action=mark_item_delivered', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: itemId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            checkReadyItemsForWaiters();
+        }
+    } catch (e) {
+        console.error("Error al descartar alerta:", e);
+    }
+}
+
+// REPORTES Y ANALÍTICA GERENCIAL CON MANEJO DE ERRORES VISIBLES
+async function loadManagerReports() {
+    try {
+        const res = await fetch('api.php?action=get_manager_reports');
+        const data = await res.json();
+
+        if (!data.success) {
+            console.error("Error devuelto por la API de reportes:", data.error);
+            return;
+        }
+
+        // 1. Top Mesero
+        if (data.top_waiter) {
+            document.getElementById('report-top-waiter-name').innerText = data.top_waiter.name;
+            document.getElementById('report-top-waiter-sales').innerText = `$${parseFloat(data.top_waiter.total_sold).toFixed(2)} vendidos (${data.top_waiter.total_orders} órdenes)`;
+            if (data.top_waiter.photo) {
+                document.getElementById('report-top-waiter-photo').src = data.top_waiter.photo;
+            }
+        } else {
+            document.getElementById('report-top-waiter-name').innerText = "Sin ventas registradas";
+            document.getElementById('report-top-waiter-sales').innerText = "$0.00";
+        }
+
+        // 2. Gráfica Ventas por Día de la Semana
+        const ctxWeekly = document.getElementById('weeklySalesChart');
+        if (ctxWeekly) {
+            if (weeklySalesChartInstance) {
+                weeklySalesChartInstance.destroy();
+            }
+            weeklySalesChartInstance = new Chart(ctxWeekly, {
+                type: 'bar',
+                data: {
+                    labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
+                    datasets: [{
+                        label: 'Ventas por Día ($)',
+                        data: data.weekly_sales,
+                        backgroundColor: 'rgba(251, 191, 36, 0.7)',
+                        borderColor: '#fbbf24',
+                        borderWidth: 2,
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // 3. Productos más solicitados
+        const topProdContainer = document.getElementById('report-top-products-list');
+        if (!data.top_products || data.top_products.length === 0) {
+            topProdContainer.innerHTML = `<p class="text-xs text-slate-500">Aún no hay productos cobrados.</p>`;
+        } else {
+            topProdContainer.innerHTML = data.top_products.map((p, idx) => `
+                <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-xs font-bold bg-amber-500/20 text-amber-400 w-6 h-6 rounded-full flex items-center justify-center">${idx + 1}</span>
+                        <div>
+                            <h5 class="text-xs font-bold text-slate-200">${p.name}</h5>
+                            <span class="text-[11px] text-slate-400">${p.category}</span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-xs font-extrabold text-amber-400">${p.total_qty} vendidos</span>
+                        <p class="text-[11px] text-slate-300">$${parseFloat(p.total_revenue).toFixed(2)}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 4. Tiempos promedio de preparación
+        const prepTimesContainer = document.getElementById('report-prep-times-list');
+        if (!data.prep_times || data.prep_times.length === 0) {
+            prepTimesContainer.innerHTML = `<p class="text-xs text-slate-500">No hay registros de tiempo de preparación aún.</p>`;
+        } else {
+            prepTimesContainer.innerHTML = data.prep_times.map(pt => `
+                <div class="flex justify-between items-center bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                    <span class="text-xs font-semibold text-slate-200">${pt.name}</span>
+                    <span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded font-bold">
+                        <i class="fa-regular fa-clock mr-1"></i> ${pt.avg_prep_minutes} mins promedio
+                    </span>
+                </div>
+            `).join('');
+        }
+
+    } catch (e) {
+        console.error("Error al cargar reportes gerenciales:", e);
+        const topProdContainer = document.getElementById('report-top-products-list');
+        if(topProdContainer) topProdContainer.innerHTML = `<p class="text-xs text-rose-400">Error de conexión al cargar reportes.</p>`;
+    }
+}
+
+// COBRO
 async function processCheckout() {
     const container = document.getElementById('ticket-items-container');
     const activeOrderId = container.dataset.activeOrderId;
@@ -273,7 +440,7 @@ async function confirmAndPrintPayment() {
 
         if (data.success) {
             printThermalReceipt();
-            alert('Cobro procesado con éxito. Mesa liberada.');
+            alert('¡Cobro exitoso! La mesa ha quedado LIBRE.');
             location.reload();
         } else {
             alert('Error: ' + data.error);
@@ -308,7 +475,7 @@ function printThermalReceipt() {
     win.document.close();
 }
 
-// ADMINISTRACIÓN Y SUBIDA DE ARCHIVOS FÍSICOS (PNG/JPG)
+// ADMIN
 async function loadAdminData() {
     try {
         const res = await fetch('api.php?action=get_admin_data');
