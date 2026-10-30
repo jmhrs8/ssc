@@ -82,7 +82,9 @@ $current_user = $_SESSION['user'] ?? null;
                 <img src="<?= htmlspecialchars($current_user['photo']) ?>" class="w-9 h-9 rounded-full object-cover border-2 border-amber-500 shadow">
                 <div>
                     <p class="text-sm font-semibold text-slate-200"><?= htmlspecialchars($current_user['name']) ?></p>
-                    <span class="text-xs uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold"><?= $current_user['role'] ?></span>
+                    <span class="text-xs uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">
+                        <?= ($current_user['role'] === 'waiter') ? 'Mesero' : (($current_user['role'] === 'kitchen') ? 'Cocina' : 'Administrador') ?>
+                    </span>
                 </div>
             </div>
             <a href="?logout=true" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 px-4 py-2 rounded-xl border border-rose-500/30 text-sm font-semibold transition flex items-center space-x-2">
@@ -107,7 +109,9 @@ $current_user = $_SESSION['user'] ?? null;
                     <a href="?login_as=<?= $u['id'] ?>" class="glass-panel card-deck p-6 rounded-2xl flex flex-col items-center group cursor-pointer border border-slate-700 hover:border-amber-500">
                         <img src="<?= htmlspecialchars($u['photo']) ?>" class="w-24 h-24 rounded-full object-cover border-4 border-slate-700 group-hover:border-amber-400 shadow-lg mb-4 transition">
                         <h3 class="text-lg font-bold text-slate-100 group-hover:text-amber-400 transition"><?= htmlspecialchars($u['name']) ?></h3>
-                        <span class="text-xs uppercase tracking-wider bg-slate-800 text-amber-300 px-3 py-1 rounded-full mt-2 font-semibold border border-slate-700"><?= $u['role'] ?></span>
+                        <span class="text-xs uppercase tracking-wider bg-slate-800 text-amber-300 px-3 py-1 rounded-full mt-2 font-semibold border border-slate-700">
+                            <?= ($u['role'] === 'waiter') ? 'Mesero' : (($u['role'] === 'kitchen') ? 'Cocina' : 'Administrador') ?>
+                        </span>
                     </a>
                     <?php endforeach; ?>
                 </div>
@@ -176,27 +180,21 @@ $current_user = $_SESSION['user'] ?? null;
                             </div>
                         </div>
 
-                        <div class="glass-panel p-6 rounded-2xl shadow-xl">
-                            <h3 class="text-lg font-bold text-amber-400 mb-4 flex items-center space-x-2">
-                                <i class="fa-solid fa-burger"></i> <span>Catálogo de Alimentos y Bebidas</span>
-                            </h3>
-                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[450px] overflow-y-auto pr-2">
-                                <?php
-                                $products = $pdo->query("SELECT * FROM products")->fetchAll();
-                                foreach ($products as $p):
-                                ?>
-                                <div class="glass-panel card-deck p-3 rounded-xl border border-slate-700 flex flex-col justify-between cursor-pointer group" onclick="addToTicket(<?= $p['id'] ?>, '<?= htmlspecialchars($p['name']) ?>', <?= $p['price'] ?>)">
-                                    <div>
-                                        <img src="<?= htmlspecialchars($p['image']) ?>" class="w-full h-28 object-cover rounded-lg mb-2 group-hover:scale-105 transition">
-                                        <h4 class="text-sm font-semibold text-slate-200 line-clamp-1"><?= htmlspecialchars($p['name']) ?></h4>
-                                        <span class="text-xs text-slate-400"><?= $p['category'] ?></span>
-                                    </div>
-                                    <div class="mt-3 flex justify-between items-center">
-                                        <span class="text-amber-400 font-bold">$<?= number_format($p['price'], 2) ?></span>
-                                        <span class="bg-amber-500 text-slate-950 p-1.5 rounded-lg text-xs font-bold shadow"><i class="fa-solid fa-plus"></i></span>
-                                    </div>
+                        <!-- CATÁLOGO CON SEPARADORES Y FILTROS POR CATEGORÍA -->
+                        <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-6">
+                            <div class="flex justify-between items-center border-b border-slate-700/60 pb-3 flex-wrap gap-3">
+                                <h3 class="text-lg font-bold text-amber-400 flex items-center space-x-2">
+                                    <i class="fa-solid fa-burger"></i> <span>Catálogo de Alimentos y Bebidas</span>
+                                </h3>
+                                <div class="flex space-x-2">
+                                    <button onclick="filterCategory('todos')" id="cat-btn-todos" class="category-filter-btn bg-amber-500 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition">Todos</button>
+                                    <button onclick="filterCategory('Bebidas Calientes')" id="cat-btn-calientes" class="category-filter-btn bg-slate-800 text-slate-300 px-3 py-1 rounded-lg text-xs transition border border-slate-700">Calientes</button>
+                                    <button onclick="filterCategory('Bebidas Frías')" id="cat-btn-frias" class="category-filter-btn bg-slate-800 text-slate-300 px-3 py-1 rounded-lg text-xs transition border border-slate-700">Frías</button>
+                                    <button onclick="filterCategory('Alimentos')" id="cat-btn-alimentos" class="category-filter-btn bg-slate-800 text-slate-300 px-3 py-1 rounded-lg text-xs transition border border-slate-700">Alimentos</button>
                                 </div>
-                                <?php endforeach; ?>
+                            </div>
+                            <div id="pos-catalog-container" class="space-y-6 max-h-[450px] overflow-y-auto pr-2">
+                                <!-- Se llena dinámicamente agrupado por separadores desde app.js -->
                             </div>
                         </div>
                     </div>
@@ -356,7 +354,8 @@ $current_user = $_SESSION['user'] ?? null;
         Diseñado por jmhrs8@gmail.com; <?= date('Y') ?>
     </footer>
 
-    <script src="app.js"></script>
+    <!-- Añadido parámetro ?v= para evitar caché estática de navegador -->
+    <script src="app.js?v=<?= time() ?>"></script>
     <script>
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
@@ -371,10 +370,11 @@ $current_user = $_SESSION['user'] ?? null;
                 activeBtn.classList.remove('glass-panel', 'text-slate-300');
                 activeBtn.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
             }
-            
+
             if(tabId === 'kds') loadKDSOrders();
             if(tabId === 'admin') loadAdminData();
             if(tabId === 'reports') loadManagerReports();
+            if(tabId === 'pos') loadPOSCatalog();
         }
 
         async function addNewTablePrompt() {

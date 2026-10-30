@@ -38,7 +38,7 @@ $current_user = $_SESSION['user'] ?? null;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Café Lumière - POS & KDS</title>
+    <title>Café Tzopelli - POS & Reportes Gerenciales</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -71,8 +71,8 @@ $current_user = $_SESSION['user'] ?? null;
                 <i class="fa-solid fa-mug-hot"></i>
             </div>
             <div>
-                <h1 class="text-xl font-bold tracking-wide text-amber-400">Café Lumière POS</h1>
-                <p class="text-xs text-slate-400">Sistema de Control de Pedidos & Cocina</p>
+                <h1 class="text-xl font-bold tracking-wide text-amber-400">Café Tzopelli</h1>
+                <p class="text-xs text-slate-400">Desayuno y mas</p>
             </div>
         </div>
 
@@ -114,7 +114,7 @@ $current_user = $_SESSION['user'] ?? null;
             </div>
         <?php else: ?>
 
-            <!-- TABS NAVIGATION SEGÚN ROL -->
+            <!-- TABS NAVIGATION -->
             <div class="flex flex-wrap gap-4 mb-8 justify-between items-center">
                 <div class="flex space-x-3">
                     <?php if ($current_user['role'] === 'waiter' || $current_user['role'] === 'admin'): ?>
@@ -130,6 +130,9 @@ $current_user = $_SESSION['user'] ?? null;
                     <?php endif; ?>
 
                     <?php if ($current_user['role'] === 'admin'): ?>
+                    <button onclick="switchTab('reports')" id="btn-tab-reports" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
+                        <i class="fa-solid fa-chart-pie"></i> <span>Reportes y Analítica</span>
+                    </button>
                     <button onclick="switchTab('admin')" id="btn-tab-admin" class="tab-btn glass-panel text-slate-300 hover:text-white px-6 py-2.5 rounded-xl transition flex items-center space-x-2 border border-slate-700">
                         <i class="fa-solid fa-gear"></i> <span>Administración</span>
                     </button>
@@ -137,10 +140,9 @@ $current_user = $_SESSION['user'] ?? null;
                 </div>
             </div>
 
-            <!-- POS TAB (PUNTO DE VENTA MESEROS) -->
+            <!-- POS TAB -->
             <?php if ($current_user['role'] === 'waiter' || $current_user['role'] === 'admin'): ?>
             <div id="tab-pos" class="tab-content space-y-6">
-                <!-- CONTENEDOR DE ALERTAS DE PRODUCTOS LISTOS PARA MESEROS -->
                 <div id="waiter-alerts-container" class="space-y-3"></div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -174,27 +176,21 @@ $current_user = $_SESSION['user'] ?? null;
                             </div>
                         </div>
 
-                        <div class="glass-panel p-6 rounded-2xl shadow-xl">
-                            <h3 class="text-lg font-bold text-amber-400 mb-4 flex items-center space-x-2">
-                                <i class="fa-solid fa-burger"></i> <span>Catálogo de Alimentos y Bebidas</span>
-                            </h3>
-                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[450px] overflow-y-auto pr-2">
-                                <?php
-                                $products = $pdo->query("SELECT * FROM products")->fetchAll();
-                                foreach ($products as $p):
-                                ?>
-                                <div class="glass-panel card-deck p-3 rounded-xl border border-slate-700 flex flex-col justify-between cursor-pointer group" onclick="addToTicket(<?= $p['id'] ?>, '<?= htmlspecialchars($p['name']) ?>', <?= $p['price'] ?>)">
-                                    <div>
-                                        <img src="<?= htmlspecialchars($p['image']) ?>" class="w-full h-28 object-cover rounded-lg mb-2 group-hover:scale-105 transition">
-                                        <h4 class="text-sm font-semibold text-slate-200 line-clamp-1"><?= htmlspecialchars($p['name']) ?></h4>
-                                        <span class="text-xs text-slate-400"><?= $p['category'] ?></span>
-                                    </div>
-                                    <div class="mt-3 flex justify-between items-center">
-                                        <span class="text-amber-400 font-bold">$<?= number_format($p['price'], 2) ?></span>
-                                        <span class="bg-amber-500 text-slate-950 p-1.5 rounded-lg text-xs font-bold shadow"><i class="fa-solid fa-plus"></i></span>
-                                    </div>
+                        <!-- CATÁLOGO CON SEPARADORES Y FILTROS POR CATEGORÍA -->
+                        <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-6">
+                            <div class="flex justify-between items-center border-b border-slate-700/60 pb-3 flex-wrap gap-3">
+                                <h3 class="text-lg font-bold text-amber-400 flex items-center space-x-2">
+                                    <i class="fa-solid fa-burger"></i> <span>Catálogo de Alimentos y Bebidas</span>
+                                </h3>
+                                <div class="flex space-x-2">
+                                    <button onclick="filterCategory('todos')" id="cat-btn-todos" class="category-filter-btn bg-amber-500 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition">Todos</button>
+                                    <button onclick="filterCategory('Bebidas Calientes')" id="cat-btn-calientes" class="category-filter-btn bg-slate-800 text-slate-300 px-3 py-1 rounded-lg text-xs transition border border-slate-700">Calientes</button>
+                                    <button onclick="filterCategory('Bebidas Frías')" id="cat-btn-frias" class="category-filter-btn bg-slate-800 text-slate-300 px-3 py-1 rounded-lg text-xs transition border border-slate-700">Frías</button>
+                                    <button onclick="filterCategory('Alimentos')" id="cat-btn-alimentos" class="category-filter-btn bg-slate-800 text-slate-300 px-3 py-1 rounded-lg text-xs transition border border-slate-700">Alimentos</button>
                                 </div>
-                                <?php endforeach; ?>
+                            </div>
+                            <div id="pos-catalog-container" class="space-y-6 max-h-[450px] overflow-y-auto pr-2">
+                                <!-- Se llena dinámicamente agrupado por separadores desde app.js -->
                             </div>
                         </div>
                     </div>
@@ -246,17 +242,14 @@ $current_user = $_SESSION['user'] ?? null;
             </div>
             <?php endif; ?>
 
-            <!-- KDS TAB (COCINA / BARRA SOLAMENTE) -->
+            <!-- KDS TAB -->
             <?php if ($current_user['role'] === 'kitchen' || $current_user['role'] === 'admin'): ?>
             <div id="tab-kds" class="tab-content <?= ($current_user['role'] === 'kitchen') ? '' : 'hidden' ?> space-y-6">
                 <div class="glass-panel p-6 rounded-2xl shadow-xl">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-xl font-bold text-amber-400 flex items-center space-x-2">
-                            <i class="fa-solid fa-utensils"></i> <span>Kitchen Display System (Solo Cocina y Barra)</span>
+                            <i class="fa-solid fa-utensils"></i> <span>Kitchen Display System (Cocina y Barra)</span>
                         </h3>
-                        <span class="text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-                            <i class="fa-solid fa-info-circle text-amber-400 mr-1"></i> Presiona "Marcar Listo" al terminar cada preparación.
-                        </span>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="kds-orders-container">
                         <div class="text-center py-12 text-slate-500">Cargando comandas pendientes...</div>
@@ -265,8 +258,57 @@ $current_user = $_SESSION['user'] ?? null;
             </div>
             <?php endif; ?>
 
-            <!-- ADMIN TAB -->
+            <!-- REPORTS TAB (ANALÍTICA PARA GERENTE / ADMINISTRADOR) -->
             <?php if ($current_user['role'] === 'admin'): ?>
+            <div id="tab-reports" class="tab-content hidden space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Top Mesero -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl flex items-center space-x-4 border border-amber-500/30">
+                        <div id="report-top-waiter-photo-container">
+                            <img id="report-top-waiter-photo" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80" class="w-16 h-16 rounded-full object-cover border-2 border-amber-400 shadow">
+                        </div>
+                        <div>
+                            <span class="text-xs uppercase bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded">Mesero Estrella</span>
+                            <h4 id="report-top-waiter-name" class="text-lg font-bold text-white mt-1">Cargando...</h4>
+                            <p id="report-top-waiter-sales" class="text-xs text-slate-300 font-semibold mt-0.5">$0.00 vendidos</p>
+                        </div>
+                    </div>
+
+                    <!-- Gráfica de Ventas por Día de la Semana -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl md:col-span-2">
+                        <h3 class="text-base font-bold text-amber-400 mb-2 flex items-center space-x-2">
+                            <i class="fa-solid fa-chart-column"></i> <span>Ventas por Día de la Semana</span>
+                        </h3>
+                        <div class="h-48">
+                            <canvas id="weeklySalesChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Productos más solicitados -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-4">
+                        <h3 class="text-base font-bold text-amber-400 flex items-center space-x-2 border-b border-slate-700 pb-2">
+                            <i class="fa-solid fa-fire text-orange-400"></i> <span>Productos Más Vendidos / Solicitados</span>
+                        </h3>
+                        <div id="report-top-products-list" class="space-y-3">
+                            <p class="text-xs text-slate-400">Cargando productos...</p>
+                        </div>
+                    </div>
+
+                    <!-- Tiempos promedio de preparación -->
+                    <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-4">
+                        <h3 class="text-base font-bold text-amber-400 flex items-center space-x-2 border-b border-slate-700 pb-2">
+                            <i class="fa-solid fa-stopwatch text-emerald-400"></i> <span>Tiempo Promedio de Preparación (Cocina/Barra)</span>
+                        </h3>
+                        <div id="report-prep-times-list" class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                            <p class="text-xs text-slate-400">Cargando tiempos...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ADMIN TAB -->
             <div id="tab-admin" class="tab-content hidden space-y-8">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div class="glass-panel p-6 rounded-2xl shadow-xl space-y-6">
@@ -305,10 +347,11 @@ $current_user = $_SESSION['user'] ?? null;
     </main>
 
     <footer class="glass-panel border-t border-slate-700/50 py-4 text-center text-xs text-slate-400 mt-auto">
-        Café Lumière POS &copy; <?= date('Y') ?>
+        Diseñado por jmhrs8@gmail.com; <?= date('Y') ?>
     </footer>
 
-    <script src="app.js"></script>
+    <!-- Añadido parámetro ?v= para evitar caché estática de navegador -->
+    <script src="app.js?v=<?= time() ?>"></script>
     <script>
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
@@ -323,9 +366,11 @@ $current_user = $_SESSION['user'] ?? null;
                 activeBtn.classList.remove('glass-panel', 'text-slate-300');
                 activeBtn.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
             }
-            
+
             if(tabId === 'kds') loadKDSOrders();
             if(tabId === 'admin') loadAdminData();
+            if(tabId === 'reports') loadManagerReports();
+            if(tabId === 'pos') loadPOSCatalog();
         }
 
         async function addNewTablePrompt() {

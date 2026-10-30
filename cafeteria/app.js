@@ -1,9 +1,12 @@
 let currentActiveTable = null;
 let activeTicketItems = [];
+let globalProductsCache = [];
+let currentCategoryFilter = 'todos';
 let weeklySalesChartInstance = null;
 
-// Cargar reportes al iniciar si la pestaña de reportes está activa
+// Cargar catálogo y reportes al iniciar
 document.addEventListener("DOMContentLoaded", () => {
+    loadPOSCatalog();
     const reportsTab = document.getElementById('tab-reports');
     if (reportsTab && !reportsTab.classList.contains('hidden')) {
         loadManagerReports();
@@ -22,9 +25,11 @@ setInterval(() => {
     }
 }, 3000);
 
+// SELECCIÓN DE MESA CORREGIDA Y ROBUSTA
 function selectTable(id, name, status) {
     currentActiveTable = { id, name, status };
-    document.getElementById('active-target-badge').innerText = `Mesa: ${name}`;
+    const badge = document.getElementById('active-target-badge');
+    if(badge) badge.innerText = `Mesa: ${name}`;
 
     if (status === 'ocupada' || status === 'cuenta_solicitada') {
         loadTableExistingBill(id);
@@ -39,7 +44,7 @@ async function loadTableExistingBill(tableId) {
         const res = await fetch(`api.php?action=get_table_bill&table_id=${tableId}`);
         const data = await res.json();
 
-        if (data.success) {
+        if (data.success && data.order) {
             activeTicketItems = data.order.items.map(i => ({
                 id: i.product_id,
                 name: i.product_name,
@@ -50,14 +55,111 @@ async function loadTableExistingBill(tableId) {
             }));
 
             if (data.order.client_name) {
-                document.getElementById('takeout-client-name').value = data.order.client_name;
+                const clientInput = document.getElementById('takeout-client-name');
+                if(clientInput) clientInput.value = data.order.client_name;
             }
 
             renderTicketUI(data.order.id);
+        } else {
+            activeTicketItems = [];
+            renderTicketUI();
         }
     } catch (e) {
-        console.error("Error al cargar cuenta:", e);
+        console.error("Error al cargar cuenta de mesa:", e);
+        activeTicketItems = [];
+        renderTicketUI();
     }
+}
+
+// CATÁLOGO DINÁMICO CON SEPARADORES AUTOMÁTICOS PARA TODAS LAS CATEGORÍAS
+async function loadPOSCatalog() {
+    try {
+        const res = await fetch('api.php?action=get_admin_data');
+        const data = await res.json();
+        if (data.success) {
+            globalProductsCache = data.products || [];
+            buildCategoryFilterButtons();
+            renderPOSCatalog();
+        }
+    } catch (e) {
+        console.error("Error al cargar catálogo en POS:", e);
+    }
+}
+
+function buildCategoryFilterButtons() {
+    // Si hay un contenedor de filtros dinámico, podemos mantener los principales o extraerlos
+}
+
+function filterCategory(cat) {
+    currentCategoryFilter = cat;
+    document.querySelectorAll('.category-filter-btn').forEach(btn => {
+        btn.classList.remove('bg-amber-500', 'text-slate-950', 'font-bold');
+        btn.classList.add('bg-slate-800', 'text-slate-300', 'border', 'border-slate-700');
+    });
+    
+    // Activar visualmente el botón seleccionado si existe
+    event && event.currentTarget && event.currentTarget.classList.remove('bg-slate-800', 'text-slate-300', 'border');
+    event && event.currentTarget && event.currentTarget.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
+    
+    renderPOSCatalog();
+}
+
+function renderPOSCatalog() {
+    const container = document.getElementById('pos-catalog-container');
+    if (!container) return;
+
+    let filtered = globalProductsCache;
+    if (currentCategoryFilter !== 'todos') {
+        filtered = globalProductsCache.filter(p => (p.category || '').toLowerCase().trim() === currentCategoryFilter.toLowerCase().trim());
+    }
+
+    if (filtered.length === 0) {
+        container.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">No hay productos en esta categoría.</p>`;
+        return;
+    }
+
+    // Agrupar automáticamente por cualquier categoría existente (Bebidas, Alimentos, Panadería, Baguettes, etc.)
+    const grouped = {};
+    filtered.forEach(p => {
+        let cat = p.category ? p.category.trim() : 'General';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(p);
+    });
+
+    let html = '';
+    for (const [categoryName, productsList] of Object.entries(grouped)) {
+        html += `
+            <div class="space-y-3 mb-6">
+                <div class="flex items-center space-x-3 pt-2">
+                    <h4 class="text-xs font-extrabold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
+                        <i class="fa-solid fa-layer-group mr-1.5"></i> ${categoryName}
+                    </h4>
+                    <div class="flex-grow border-t border-slate-700/60"></div>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        `;
+
+        productsList.forEach(p => {
+            const safeName = (p.name || '').replace(/'/g, "\\'");
+            html += `
+                <div class="glass-panel card-deck p-3 rounded-xl border border-slate-700 flex flex-col justify-between cursor-pointer group" onclick="addToTicket(${p.id}, '${safeName}', ${p.price})">
+                    <div>
+                        <img src="${p.image}" class="w-full h-28 object-cover rounded-lg mb-2 group-hover:scale-105 transition">
+                        <h5 class="text-sm font-semibold text-slate-200 line-clamp-1">${p.name}</h5>
+                        <span class="text-[11px] text-slate-400">${p.category}</span>
+                    </div>
+                    <div class="mt-3 flex justify-between items-center">
+                        <span class="text-amber-400 font-bold">$${parseFloat(p.price).toFixed(2)}</span>
+                        <span class="bg-amber-500 text-slate-950 p-1.5 rounded-lg text-xs font-bold shadow"><i class="fa-solid fa-plus"></i></span>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `</div></div>`;
+    }
+
+    container.innerHTML = html;
 }
 
 function addToTicket(id, name, price) {
@@ -76,9 +178,9 @@ function renderTicketUI(existingOrderId = null) {
     
     if (activeTicketItems.length === 0) {
         container.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">Ningún producto seleccionado.</p>`;
-        document.getElementById('ticket-subtotal').innerText = '$0.00';
-        document.getElementById('ticket-iva').innerText = '$0.00';
-        document.getElementById('ticket-total').innerText = '$0.00';
+        const sub = document.getElementById('ticket-subtotal'); if(sub) sub.innerText = '$0.00';
+        const iva = document.getElementById('ticket-iva'); if(iva) iva.innerText = '$0.00';
+        const tot = document.getElementById('ticket-total'); if(tot) tot.innerText = '$0.00';
         return;
     }
 
@@ -109,9 +211,9 @@ function renderTicketUI(existingOrderId = null) {
     let total = subtotal + iva;
 
     container.innerHTML = html;
-    document.getElementById('ticket-subtotal').innerText = `$${subtotal.toFixed(2)}`;
-    document.getElementById('ticket-iva').innerText = `$${iva.toFixed(2)}`;
-    document.getElementById('ticket-total').innerText = `$${total.toFixed(2)}`;
+    const sub = document.getElementById('ticket-subtotal'); if(sub) sub.innerText = `$${subtotal.toFixed(2)}`;
+    const ivaEl = document.getElementById('ticket-iva'); if(ivaEl) ivaEl.innerText = `$${iva.toFixed(2)}`;
+    const tot = document.getElementById('ticket-total'); if(tot) tot.innerText = `$${total.toFixed(2)}`;
     
     container.dataset.activeOrderId = existingOrderId || '';
 }
@@ -128,7 +230,9 @@ async function sendOrderToKitchen() {
         return;
     }
 
-    const takeoutClient = document.getElementById('takeout-client-name').value.trim();
+    const clientInput = document.getElementById('takeout-client-name');
+    const takeoutClient = clientInput ? clientInput.value.trim() : '';
+    
     const payload = {
         table_id: currentActiveTable ? currentActiveTable.id : null,
         client_name: takeoutClient,
@@ -145,17 +249,17 @@ async function sendOrderToKitchen() {
         const data = await res.json();
 
         if (data.success) {
-            alert('¡Enviado a cocina y mesa ocupada con éxito!');
+            alert('¡Enviado a cocina con éxito!');
             location.reload();
         } else {
             alert('Error: ' + data.error);
         }
     } catch (e) {
-        alert('Error de red.');
+        alert('Error de red al enviar a cocina.');
     }
 }
 
-// KDS
+// KDS Y ALERTAS
 async function loadKDSOrders() {
     try {
         const res = await fetch('api.php?action=get_kds_orders');
@@ -280,101 +384,91 @@ async function dismissReadyAlert(itemId) {
     }
 }
 
-// REPORTES Y ANALÍTICA GERENCIAL CON MANEJO DE ERRORES VISIBLES
+// REPORTES Y ANALÍTICA GERENCIAL
 async function loadManagerReports() {
     try {
         const res = await fetch('api.php?action=get_manager_reports');
         const data = await res.json();
 
-        if (!data.success) {
-            console.error("Error devuelto por la API de reportes:", data.error);
-            return;
-        }
-
-        // 1. Top Mesero
-        if (data.top_waiter) {
-            document.getElementById('report-top-waiter-name').innerText = data.top_waiter.name;
-            document.getElementById('report-top-waiter-sales').innerText = `$${parseFloat(data.top_waiter.total_sold).toFixed(2)} vendidos (${data.top_waiter.total_orders} órdenes)`;
-            if (data.top_waiter.photo) {
-                document.getElementById('report-top-waiter-photo').src = data.top_waiter.photo;
-            }
-        } else {
-            document.getElementById('report-top-waiter-name').innerText = "Sin ventas registradas";
-            document.getElementById('report-top-waiter-sales').innerText = "$0.00";
-        }
-
-        // 2. Gráfica Ventas por Día de la Semana
-        const ctxWeekly = document.getElementById('weeklySalesChart');
-        if (ctxWeekly) {
-            if (weeklySalesChartInstance) {
-                weeklySalesChartInstance.destroy();
-            }
-            weeklySalesChartInstance = new Chart(ctxWeekly, {
-                type: 'bar',
-                data: {
-                    labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
-                    datasets: [{
-                        label: 'Ventas por Día ($)',
-                        data: data.weekly_sales,
-                        backgroundColor: 'rgba(251, 191, 36, 0.7)',
-                        borderColor: '#fbbf24',
-                        borderWidth: 2,
-                        borderRadius: 8
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
-                    }
+        if (data.success) {
+            if (data.top_waiter) {
+                document.getElementById('report-top-waiter-name').innerText = data.top_waiter.name;
+                document.getElementById('report-top-waiter-sales').innerText = `$${parseFloat(data.top_waiter.total_sold).toFixed(2)} vendidos (${data.top_waiter.total_orders} órdenes)`;
+                if (data.top_waiter.photo) {
+                    document.getElementById('report-top-waiter-photo').src = data.top_waiter.photo;
                 }
-            });
-        }
+            } else {
+                document.getElementById('report-top-waiter-name').innerText = "Sin ventas registradas";
+                document.getElementById('report-top-waiter-sales').innerText = "$0.00";
+            }
 
-        // 3. Productos más solicitados
-        const topProdContainer = document.getElementById('report-top-products-list');
-        if (!data.top_products || data.top_products.length === 0) {
-            topProdContainer.innerHTML = `<p class="text-xs text-slate-500">Aún no hay productos cobrados.</p>`;
-        } else {
-            topProdContainer.innerHTML = data.top_products.map((p, idx) => `
-                <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-                    <div class="flex items-center space-x-3">
-                        <span class="text-xs font-bold bg-amber-500/20 text-amber-400 w-6 h-6 rounded-full flex items-center justify-center">${idx + 1}</span>
-                        <div>
-                            <h5 class="text-xs font-bold text-slate-200">${p.name}</h5>
-                            <span class="text-[11px] text-slate-400">${p.category}</span>
+            const ctxWeekly = document.getElementById('weeklySalesChart');
+            if (ctxWeekly) {
+                if (weeklySalesChartInstance) {
+                    weeklySalesChartInstance.destroy();
+                }
+                weeklySalesChartInstance = new Chart(ctxWeekly, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
+                        datasets: [{
+                            label: 'Ventas por Día ($)',
+                            data: data.weekly_sales,
+                            backgroundColor: 'rgba(251, 191, 36, 0.7)',
+                            borderColor: '#fbbf24',
+                            borderWidth: 2,
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                        }
+                    }
+                });
+            }
+
+            const topProdContainer = document.getElementById('report-top-products-list');
+            if (!data.top_products || data.top_products.length === 0) {
+                topProdContainer.innerHTML = `<p class="text-xs text-slate-500">Aún no hay productos cobrados.</p>`;
+            } else {
+                topProdContainer.innerHTML = data.top_products.map((p, idx) => `
+                    <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs font-bold bg-amber-500/20 text-amber-400 w-6 h-6 rounded-full flex items-center justify-center">${idx + 1}</span>
+                            <div>
+                                <h5 class="text-xs font-bold text-slate-200">${p.name}</h5>
+                                <span class="text-[11px] text-slate-400">${p.category}</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-xs font-extrabold text-amber-400">${p.total_qty} vendidos</span>
+                            <p class="text-[11px] text-slate-300">$${parseFloat(p.total_revenue).toFixed(2)}</p>
                         </div>
                     </div>
-                    <div class="text-right">
-                        <span class="text-xs font-extrabold text-amber-400">${p.total_qty} vendidos</span>
-                        <p class="text-[11px] text-slate-300">$${parseFloat(p.total_revenue).toFixed(2)}</p>
+                `).join('');
+            }
+
+            const prepTimesContainer = document.getElementById('report-prep-times-list');
+            if (!data.prep_times || data.prep_times.length === 0) {
+                prepTimesContainer.innerHTML = `<p class="text-xs text-slate-500">No hay registros de tiempo de preparación aún.</p>`;
+            } else {
+                prepTimesContainer.innerHTML = data.prep_times.map(pt => `
+                    <div class="flex justify-between items-center bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                        <span class="text-xs font-semibold text-slate-200">${pt.name}</span>
+                        <span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded font-bold">
+                            <i class="fa-regular fa-clock mr-1"></i> ${pt.avg_prep_minutes} mins promedio
+                        </span>
                     </div>
-                </div>
-            `).join('');
+                `).join('');
+            }
         }
-
-        // 4. Tiempos promedio de preparación
-        const prepTimesContainer = document.getElementById('report-prep-times-list');
-        if (!data.prep_times || data.prep_times.length === 0) {
-            prepTimesContainer.innerHTML = `<p class="text-xs text-slate-500">No hay registros de tiempo de preparación aún.</p>`;
-        } else {
-            prepTimesContainer.innerHTML = data.prep_times.map(pt => `
-                <div class="flex justify-between items-center bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-                    <span class="text-xs font-semibold text-slate-200">${pt.name}</span>
-                    <span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded font-bold">
-                        <i class="fa-regular fa-clock mr-1"></i> ${pt.avg_prep_minutes} mins promedio
-                    </span>
-                </div>
-            `).join('');
-        }
-
     } catch (e) {
         console.error("Error al cargar reportes gerenciales:", e);
-        const topProdContainer = document.getElementById('report-top-products-list');
-        if(topProdContainer) topProdContainer.innerHTML = `<p class="text-xs text-rose-400">Error de conexión al cargar reportes.</p>`;
     }
 }
 
@@ -404,10 +498,10 @@ function showTicketMiniaturePreview() {
         <div class="glass-panel p-6 rounded-2xl border border-slate-700 w-80 text-slate-100 shadow-2xl space-y-4">
             <div class="text-center border-b border-slate-700 pb-3">
                 <h4 class="font-extrabold text-amber-400 text-base">VISTA PREVIA DEL TICKET</h4>
-                <p class="text-xs text-slate-400">Café Lumière - ${targetLabel}</p>
+                <p class="text-xs text-slate-400">Café Tzopelli - ${targetLabel}</p>
             </div>
             <div class="bg-white text-slate-900 p-4 rounded-xl font-mono text-xs space-y-2 max-h-60 overflow-y-auto shadow-inner">
-                <div class="text-center font-bold">CAFÉ LUMIÈRE POS</div>
+                <div class="text-center font-bold">CAFÉ TZOPELLI POS</div>
                 <div class="border-b border-dashed border-slate-400 my-1"></div>
                 ${activeTicketItems.map(i => `<div class="flex justify-between"><span>${i.quantity}x ${i.name}</span><span>$${(i.price * i.quantity).toFixed(2)}</span></div>`).join('')}
                 <div class="border-b border-dashed border-slate-400 my-1"></div>
@@ -462,7 +556,7 @@ function printThermalReceipt() {
         <head><title>Ticket de Consumo</title>
         <style>body { font-family: monospace; width: 280px; padding: 10px; font-size: 12px; }</style></head>
         <body>
-            <div style="text-align:center;"><b>CAFÉ LUMIÈRE</b><br>Mesa/Servicio: ${targetLabel}<br>${new Date().toLocaleString()}</div>
+            <div style="text-align:center;"><b>CAFÉ TZOPELLI</b><br>Mesa/Servicio: ${targetLabel}<br>${new Date().toLocaleString()}</div>
             <hr>
             ${activeTicketItems.map(i => `<div>${i.quantity}x ${i.name} - $${(i.price*i.quantity).toFixed(2)}</div>`).join('')}
             <hr>
@@ -543,7 +637,7 @@ async function editWaiter(id, currentName, currentUsername) {
 async function addNewProduct() {
     const name = prompt("Nombre del Producto:");
     if (!name) return;
-    const category = prompt("Categoría:", "Bebidas Calientes");
+    const category = prompt("Categoría (ej. Bebidas Calientes, Bebidas Frías, Alimentos, Panadería, Baguettes):", "Alimentos");
     const price = parseFloat(prompt("Precio ($):", "50.00"));
     triggerFileUploadModal("Producto (" + name + ")", async (formData) => {
         formData.append('name', name);
