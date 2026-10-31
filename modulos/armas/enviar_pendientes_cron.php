@@ -30,18 +30,18 @@ $destinatarios_por_aseguradora = [
     'AGROASEMEX' => [
         'david.vazquez@qm-adjusters.com.mx',
         'lvelazquez@agroasemex.gob.mx',
-        'kuriostegui@agroasemex.gob.mx'
-        'erikassc88@gmail.com'
-        'jesus.perez.castro0503@gmail.com'
-        'jmhrs8@gmail.com'
+        'kuriostegui@agroasemex.gob.mx',
+        'erikassc88@gmail.com',
+        'jesus.perez.castro0503@gmail.com',
+        'jmhrs8@gmail.com',
         'gersonemm@gmail.com'
     ],
     'AZTECA' => [
         'jose.quiroz@segurosazteca.com.mx',
-        'nadia.lopez@segurosazteca.com.mx'
-        'erikassc88@gmail.com'
-        'jesus.perez.castro0503@gmail.com'
-        'jmhrs8@gmail.com'
+        'nadia.lopez@segurosazteca.com.mx',
+        'erikassc88@gmail.com',
+        'jesus.perez.castro0503@gmail.com',
+        'jmhrs8@gmail.com',
         'gersonemm@gmail.com'
     ]
 ];

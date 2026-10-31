@@ -69,7 +69,7 @@ if (trim(strip_tags($descripcion_bien_text)) === '') {
             <td width="50%">
                 <div class="t-bold" style="font-size: 14px;">CIUDAD DE MÉXICO</div>
                 <div style="font-size: 10px;">CAPITAL DE LA TRANSFORMACIÓN</div>
-                <div class="t-bold" style="margin-top:10px; font-size: 12px;">REPORTE DE SINIESTRO 2026</div>
+                <div class="t-bold" style="margin-top:10px; font-size: 12px;">REPORTE DE SINIESTRO SSC</div>
                 <div style="margin-top:15px;">
                     <span class="t-bold">TIPO DE BIEN:</span><br>
                     <span style="font-size: 11px;"><?= $d['tipo_bien'] ?></span>

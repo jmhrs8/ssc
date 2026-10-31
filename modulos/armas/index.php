@@ -264,7 +264,7 @@ try {
                         <td class="text-center"><?= htmlspecialchars($r['chalecos'] ?? '') ?></td>
                         <td><?= htmlspecialchars($r['atendio'] ?? '') ?></td>
                         <td><?= htmlspecialchars($r['digitalizado'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($r['observaciones_grales'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($r['observaciones_grales'] ?? $r['narracion'] ?? '') ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>

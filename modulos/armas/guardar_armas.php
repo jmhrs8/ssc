@@ -23,6 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Definimos cuáles campos son estrictamente numéricos para evitar Error 1366
     $camposNumericos = ['candado_manos', 'armas', 'cargador', 'cartuchos', 'cascos', 'escudos', 'chalecos'];
 
+    // 2. DATOS EXCLUSIVOS PARA LA TABLA ESPEJO Y SINCRONIZACIÓN DE NARRACIÓN
+    $nombre_resguardante = mb_strtoupper(trim($_POST['nombre_resguardante'] ?? ''), 'UTF-8');
+    $lugar_siniestro     = mb_strtoupper(trim($_POST['lugar_siniestro'] ?? ''), 'UTF-8');
+    $narracion           = mb_strtoupper(trim($_POST['narracion'] ?? ''), 'UTF-8');
+
+    // Forzamos a que el campo observaciones_grales reciba exactamente lo mismo que narracion para que se refleje en el index
+    $_POST['observaciones_grales'] = $narracion;
+
     $valores = [];
     foreach ($campos as $campo) {
         // Obtenemos el valor, si no existe ponemos cadena vacía
@@ -43,11 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
-    // 2. DATOS EXCLUSIVOS PARA LA TABLA ESPEJO (Relacionados por id_arma)
-    $nombre_resguardante = mb_strtoupper(trim($_POST['nombre_resguardante'] ?? ''), 'UTF-8');
-    $lugar_siniestro     = mb_strtoupper(trim($_POST['lugar_siniestro'] ?? ''), 'UTF-8');
-    $narracion           = mb_strtoupper(trim($_POST['narracion'] ?? ''), 'UTF-8');
-
     try {
         $pdo->beginTransaction();
 
@@ -56,11 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $set_parts = [];
             foreach ($campos as $c) { $set_parts[] = "$c = ?"; }
             $sql = "UPDATE inventario_armas SET " . implode(', ', $set_parts) . " WHERE id = ?";
-            
+
             $params_update = array_merge($valores, [$id]);
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params_update);
-            
+
             $id_final = $id;
             $mensaje = "actualizado";
         } else {
@@ -68,10 +71,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $cols = implode(', ', $campos);
             $placeholders = implode(', ', array_fill(0, count($campos), '?'));
             $sql = "INSERT INTO inventario_armas ($cols) VALUES ($placeholders)";
-            
+
             $stmt = $pdo->prepare($sql);
             $stmt->execute($valores);
-            
+
             $id_final = $pdo->lastInsertId();
             $mensaje = "guardado";
         }
@@ -98,3 +101,4 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         die("Error crítico al procesar la solicitud: " . $e->getMessage());
     }
 }
+?>
