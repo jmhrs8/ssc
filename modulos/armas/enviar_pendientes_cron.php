@@ -63,10 +63,22 @@ try {
         }
 
         $lista_siniestros = "<ol style='margin-top: 5px; font-family: Arial, sans-serif; font-size: 12px; line-height: 1.6;'>";
+        $contador_validos = 0;
+
         foreach ($pendientes as $num_siniestro) {
-            $lista_siniestros .= "<li><b>" . htmlspecialchars($num_siniestro) . "</b></li>";
+            $num_limpio = trim($num_siniestro ?? '');
+            // Omitimos si está vacío, es NULL o contiene solo guiones/espacios vacíos
+            if (!empty($num_limpio) && $num_limpio !== '-') {
+                $lista_siniestros .= "<li><b>" . htmlspecialchars($num_limpio) . "</b></li>";
+                $contador_validos++;
+            }
         }
         $lista_siniestros .= "</ol>";
+
+        // Si después de filtrar no quedó ningún siniestro válido con número, saltamos el envío
+        if ($contador_validos === 0) {
+            continue;
+        }
 
         $cuerpo_html = "<html><body style='font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a;'>" .
                        $texto_base .
@@ -89,7 +101,7 @@ try {
         $resultados_envio[] = [
             'aseguradora' => $aseguradora,
             'enviado_a' => $destinatarios_str,
-            'total_registros' => count($pendientes),
+            'total_registros' => $contador_validos,
             'estatus' => $enviado ? 'ENVIADO CORRECTAMENTE' : 'ERROR EN ENVIO'
         ];
     }
