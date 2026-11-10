@@ -1,7 +1,7 @@
 <?php
 /**
- * ARCHIVO: subir_excel.php 
- * VERSIÓN: FINAL - AJUSTADA A ESTRUCTURA DE 41 COLUMNAS
+ * ARCHIVO: subir_excel.php
+ * VERSIÓN: FINAL - AJUSTADA A ESTRUCTURA DE 41 COLUMNAS CON FILTRO DE DUPLICADOS EN NO. EXPEDIENTE
  */
 require '../../vendor/autoload.php';
 require_once "../../config/conexion.php";
@@ -30,10 +30,16 @@ function limpiarEntero($valor) {
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['archivo'])) {
     header('Content-Type: application/json');
-    $index = 0; 
+    $index = 0;
     try {
         $spreadsheet = IOFactory::load($_FILES['archivo']['tmp_name']);
         $rows = $spreadsheet->getActiveSheet()->toArray();
+
+        // 1. OBTENEMOS LOS EXPEDIENTES EXISTENTES EN LA BD PARA EVITAR DUPLICADOS
+        $stmt_existentes = $pdo->query("SELECT no_expediente FROM inventario_armas WHERE no_expediente IS NOT NULL AND no_expediente != ''");
+        $expedientes_db = $stmt_existentes->fetchAll(PDO::FETCH_COLUMN);
+        // Creamos un diccionario flip para búsqueda rápida en memoria (O(1))
+        $mapa_existentes = array_flip(array_map('trim', array_map('strtoupper', $expedientes_db)));
 
         $pdo->beginTransaction();
         // SQL_MODE vacío para permitir flexibilidad en inserción
@@ -52,9 +58,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['archivo'])) {
 
         $stmt = $pdo->prepare($sql);
         $count = 0;
+        $duplicados_omitidos = 0;
 
         foreach ($rows as $index => $row) {
-            if ($index == 0 || empty(array_filter($row))) continue; 
+            if ($index == 0 || empty(array_filter($row))) continue;
+
+            // Extraemos el número de expediente de la celda correspondiente (índice 9 según tu mapeo)
+            $expediente_excel = trim((string)($row[9] ?? ''));
+            $expediente_mayus = mb_strtoupper($expediente_excel, 'UTF-8');
+
+            // VALIDACIÓN DE DUPLICADOS: Si el expediente ya existe en la BD, lo omitimos
+            if (!empty($expediente_mayus) && isset($mapa_existentes[$expediente_mayus])) {
+                $duplicados_omitidos++;
+                continue; // Salta esta fila y continúa con la siguiente
+            }
 
             // 1. Año: Extraer solo los 4 dígitos (para evitar error en tipo YEAR)
             $anio = preg_match('/(\d{4})/', (string)$row[3], $m) ? intval($m[1]) : null;
@@ -105,10 +122,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['archivo'])) {
 
             $stmt->execute($data);
             $count++;
+
+            // Agregamos al mapa local para evitar duplicados si el mismo Excel trae repetidos internos
+            if (!empty($expediente_mayus)) {
+                $mapa_existentes[$expediente_mayus] = true;
+            }
         }
 
         $pdo->commit();
-        echo json_encode(["status" => "success", "message" => "¡IMPORTACIÓN EXITOSA! SE CARGARON $count REGISTROS."]);
+        
+        $mensaje_final = "¡IMPORTACIÓN EXITOSA! SE CARGARON $count REGISTROS NUEVOS.";
+        if ($duplicados_omitidos > 0) {
+            $mensaje_final .= " (Se omitieron $duplicados_omitidos registros por tener número de expediente duplicado).";
+        }
+
+        echo json_encode(["status" => "success", "message" => $mensaje_final]);
 
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
