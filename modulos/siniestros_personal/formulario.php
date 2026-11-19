@@ -1,7 +1,7 @@
 <?php
 require_once "../../config/conexion.php";
 
-$id = isset($_GET['id']) ? $_GET['id'] : null;
+$id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
 // Meses en español para autoseleccionar el mes actual
 $meses_es = [
@@ -11,6 +11,7 @@ $meses_es = [
 ];
 $mes_actual = $meses_es[(int)date('n')];
 $fecha_hoy = date('Y-m-d');
+$hora_actual = date('H:i');
 
 $registro = [
     'no_folio' => '', 'tipo' => 'OFICIAL', 'mes_de_reporte' => $mes_actual, 'no_empleado' => '', 'edad' => '',
@@ -19,17 +20,31 @@ $registro = [
     'fecha_de_siniestro' => $fecha_hoy, 'reporte' => '', 'poliza_seccion' => '', 'aseguradora' => '',
     'causa_resumido' => '', 'unidad_vehicular' => '', 'no_economico' => '', 'lugar_accidente' => '',
     'supervisor_riesgos' => '', 'no_ambulancia' => '', 'hospital' => '', 'requirio_hospitalizacion' => 'NO',
-    'diagnostico' => '', 'quien_reporta' => '', 'quien_recibe' => '', 'fecha_ingreso_hospital' => '',
-    'hora_ingreso_hospital' => '', 'cabina_nombre' => '', 'cabina_ap_paterno' => '', 'cabina_ap_materno' => '',
+    'diagnostico' => '', 'quien_reporta' => '', 'quien_recibe' => '',
+    'fecha_ingreso_hospital' => $fecha_hoy,
+    'hora_ingreso_hospital' => $hora_actual,
+    'cabina_nombre' => '', 'cabina_ap_paterno' => '', 'cabina_ap_materno' => '',
     'actividades_cabina' => '', 'conclusiones' => '', 'lesiones' => '', 'observaciones' => '',
     'montos_erogados' => '', 'area_adscripcion' => '', 'fotos' => []
 ];
 
 if (!$id) {
+    // Año en curso a 2 dígitos (ej. 26 para 2026, 27 para 2027)
     $anio = date('y');
-    $stmtMax = $pdo->query("SELECT MAX(id) FROM siniestros_personal");
-    $maxId = $stmtMax->fetchColumn() + 1;
-    $registro['no_folio'] = str_pad($maxId, 4, '0', STR_PAD_LEFT) . '-' . $anio;
+    
+    // Busca el consecutivo más alto SOLO del año en curso; si es año nuevo, inicia en 0 + 1 = 0001-27
+    $stmtFolio = $pdo->prepare("
+        SELECT COALESCE(
+            MAX(CAST(SUBSTRING_INDEX(no_folio, '-', 1) AS UNSIGNED)),
+            0
+        ) AS max_consecutivo
+        FROM siniestros_personal
+        WHERE no_folio LIKE CONCAT('%-', ?)
+    ");
+    $stmtFolio->execute([$anio]);
+    $siguienteConsecutivo = (int)$stmtFolio->fetchColumn() + 1;
+    
+    $registro['no_folio'] = str_pad($siguienteConsecutivo, 4, '0', STR_PAD_LEFT) . '-' . $anio;
 } else {
     $stmt = $pdo->prepare("SELECT * FROM siniestros_personal WHERE id = ?");
     $stmt->execute([$id]);
@@ -38,6 +53,11 @@ if (!$id) {
     if ($result_db) {
         // Combinamos para asegurar que todas las llaves existan
         $registro = array_merge($registro, $result_db);
+    }
+
+    // Normaliza formato HH:MM si la BD devuelve HH:MM:SS para que el input type="time" lo muestre bien
+    if (!empty($registro['hora_ingreso_hospital']) && strlen($registro['hora_ingreso_hospital']) >= 5) {
+        $registro['hora_ingreso_hospital'] = substr($registro['hora_ingreso_hospital'], 0, 5);
     }
 
     if (!empty($registro['foto'])) {
@@ -49,6 +69,13 @@ if (!$id) {
         }
     }
 }
+
+$mismo_lesionado_inicial = (
+    !empty(trim((string)($registro['nombre'] ?? ''))) &&
+    strtoupper(trim((string)($registro['nombre'] ?? ''))) === strtoupper(trim((string)($registro['lesionado_nombre'] ?? ''))) &&
+    strtoupper(trim((string)($registro['apellido_paterno'] ?? ''))) === strtoupper(trim((string)($registro['lesionado_ap_paterno'] ?? ''))) &&
+    strtoupper(trim((string)($registro['apellido_materno'] ?? ''))) === strtoupper(trim((string)($registro['lesionado_ap_materno'] ?? '')))
+);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -61,6 +88,7 @@ if (!$id) {
     <style>
         body { text-transform: uppercase; font-size: 11px; background: #f4f6f9; }
         input, select, textarea { text-transform: uppercase !important; }
+        input[readonly] { background-color: #e9ecef !important; cursor: not-allowed; user-select: none; }
         .card { border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px; }
         .card-header { background-color: #212529; color: white; font-weight: 600; font-size: 12px; }
         .section-header { background: #1a1a1a; color: #ffc107; padding: 6px 12px; border-radius: 4px; font-weight: bold; margin-top: 20px; margin-bottom: 12px; font-size: 11px; }
@@ -78,12 +106,12 @@ if (!$id) {
         </div>
         <div class="card-body">
             <form action="guardar.php" method="POST" enctype="multipart/form-data" id="formSiniestro">
-                <input type="hidden" name="id" value="<?= $id ?>">
+                <input type="hidden" name="id" value="<?= $id ? htmlspecialchars((string)$id) : '' ?>">
 
                 <div class="row g-3">
                     <div class="col-md-3">
-                        <label class="form-label fw-bold">No. FOLIO</label>
-                        <input type="text" name="no_folio" class="form-control" value="<?= htmlspecialchars($registro['no_folio']) ?>" readonly required>
+                        <label class="form-label fw-bold">No. FOLIO <span class="text-muted fw-normal">(CONSECUTIVO)</span></label>
+                        <input type="text" id="no_folio" name="no_folio" class="form-control fw-bold" value="<?= htmlspecialchars($registro['no_folio']) ?>" readonly required tabindex="-1">
                     </div>
 
                     <div class="col-md-3">
@@ -212,20 +240,28 @@ if (!$id) {
                     </div>
 
                     <div class="col-md-12">
-                        <div class="section-header"><i class="fas fa-file-alt me-1"></i> 3. COMPLEMENTO, FORMATO OFICIAL Y DATOS DEL LESIONADO</div>
+                        <div class="section-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <span><i class="fas fa-file-alt me-1"></i> 3. COMPLEMENTO, FORMATO OFICIAL Y DATOS DEL LESIONADO</span>
+                            <div class="form-check form-check-inline m-0">
+                                <input class="form-check-input" type="checkbox" id="chk_mismo_elemento" <?= $mismo_lesionado_inicial ? 'checked' : '' ?>>
+                                <label class="form-check-label text-white fw-bold" for="chk_mismo_elemento" style="cursor: pointer;">
+                                    MISMO ELEMENTO DE ARRIBA (CONDUCTOR / ELEMENTO LESIONADO)
+                                </label>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="col-md-4">
                         <label class="form-label fw-bold text-danger">NOMBRE(S) DEL LESIONADO</label>
-                        <input type="text" name="lesionado_nombre" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_nombre'] ?? '') ?>" placeholder="LLENAR APARTE SI ES DISTINTO">
+                        <input type="text" id="lesionado_nombre" name="lesionado_nombre" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_nombre'] ?? '') ?>" placeholder="LLENAR APARTE SI ES DISTINTO">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold text-danger">APELLIDO PATERNO (LESIONADO)</label>
-                        <input type="text" name="lesionado_ap_paterno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_paterno'] ?? '') ?>">
+                        <input type="text" id="lesionado_ap_paterno" name="lesionado_ap_paterno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_paterno'] ?? '') ?>">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold text-danger">APELLIDO MATERNO (LESIONADO)</label>
-                        <input type="text" name="lesionado_ap_materno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_materno'] ?? '') ?>">
+                        <input type="text" id="lesionado_ap_materno" name="lesionado_ap_materno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_materno'] ?? '') ?>">
                     </div>
 
                     <div class="col-md-4">
@@ -251,12 +287,12 @@ if (!$id) {
                         <input type="text" name="no_ambulancia" class="form-control" value="<?= htmlspecialchars($registro['no_ambulancia'] ?? '') ?>">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label fw-bold">FECHA INGRESO HOSPITAL</label>
+                        <label class="form-label fw-bold">FECHA INGRESO HOSPITAL <span class="text-muted fw-normal">(ACTUAL)</span></label>
                         <input type="date" name="fecha_ingreso_hospital" class="form-control" value="<?= htmlspecialchars($registro['fecha_ingreso_hospital'] ?? '') ?>">
                     </div>
 
                     <div class="col-md-3">
-                        <label class="form-label fw-bold">HORA INGRESO HOSPITAL</label>
+                        <label class="form-label fw-bold">HORA INGRESO HOSPITAL <span class="text-muted fw-normal">(ACTUAL)</span></label>
                         <input type="time" name="hora_ingreso_hospital" class="form-control" value="<?= htmlspecialchars($registro['hora_ingreso_hospital'] ?? '') ?>">
                     </div>
                     <div class="col-md-4">
@@ -324,6 +360,42 @@ if (!$id) {
 </div>
 
 <script>
+// Bloqueo preventivo para que no puedan alterar el consecutivo desde navegador/consola
+(function() {
+    const folioInput = document.getElementById('no_folio');
+    const folioOriginal = folioInput.value;
+    Object.defineProperty(folioInput, 'value', {
+        get() { return folioOriginal; },
+        set() { return folioOriginal; }
+    });
+    document.getElementById('formSiniestro').addEventListener('submit', function() {
+        folioInput.setAttribute('value', folioOriginal);
+    });
+})();
+
+// Copiar datos del elemento de arriba hacia los campos de lesionado cuando se marca la casilla
+function sincronizarLesionadoConElemento() {
+    if ($('#chk_mismo_elemento').is(':checked')) {
+        $('#lesionado_nombre').val($('#nombre').val().trim().toUpperCase());
+        $('#lesionado_ap_paterno').val($('#apellido_paterno').val().trim().toUpperCase());
+        $('#lesionado_ap_materno').val($('#apellido_materno').val().trim().toUpperCase());
+    }
+}
+
+$('#chk_mismo_elemento').on('change', function() {
+    if ($(this).is(':checked')) {
+        sincronizarLesionadoConElemento();
+    } else {
+        $('#lesionado_nombre').val('').focus();
+        $('#lesionado_ap_paterno').val('');
+        $('#lesionado_ap_materno').val('');
+    }
+});
+
+$('#nombre, #apellido_paterno, #apellido_materno').on('input change', function() {
+    sincronizarLesionadoConElemento();
+});
+
 let dtFiles = new DataTransfer();
 
 document.getElementById('input_fotos').addEventListener('change', function(e) {
@@ -409,6 +481,7 @@ $('#btn_verificar').click(function(e) {
                     if(edadAprox > 15 && edadAprox < 90) { $('#edad').val(edadAprox); }
                 }
 
+                sincronizarLesionadoConElemento();
                 $('#estado_asegurado').html('<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> VERIFICADO: ELEMENTO ENCONTRADO EN PADRÓN DE ASEGURADOS.</span>');
             } else {
                 let continuar = confirm('⚠️ EL RFC INGRESADO NO FUE ENCONTRADO EN LA BASE GENERAL DE ASEGURADOS.\n\n¿Desea continuar el usuario al parecer no esta asegurado?');
