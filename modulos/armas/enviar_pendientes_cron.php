@@ -33,7 +33,6 @@ $destinatarios_por_aseguradora = [
         'kuriostegui@agroasemex.gob.mx',
         'erikassc88@gmail.com',
         'jesus.perez.castro0503@gmail.com',
-        'jmhrs8@gmail.com',
         'gersonemm@gmail.com'
     ],
     'AZTECA' => [
@@ -41,7 +40,6 @@ $destinatarios_por_aseguradora = [
         'nadia.lopez@segurosazteca.com.mx',
         'erikassc88@gmail.com',
         'jesus.perez.castro0503@gmail.com',
-        'jmhrs8@gmail.com',
         'gersonemm@gmail.com'
     ]
 ];

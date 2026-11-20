@@ -1,266 +1,516 @@
 <?php
-/**
- * ARCHIVO: formulario.php (Módulo Armas)
- * CORRECCIÓN: Error 1054 (Columna 'activo' inexistente) y optimización de carga.
- */
+date_default_timezone_set('America/Mexico_City');
 require_once "../../config/conexion.php";
 
-$id = $_GET['id'] ?? null;
-$d = [];
+$id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
-if ($id) {
-    $stmt = $pdo->prepare("
-        SELECT g.*, e.nombre_resguardante, e.lugar_siniestro, e.narracion
-        FROM inventario_armas g
-        LEFT JOIN espejo_siniestros_armas e ON g.id = e.id_arma
-        WHERE g.id = ?
+$tzMexico = new DateTimeZone('America/Mexico_City');
+$ahoraMx  = new DateTime('now', $tzMexico);
+
+// Meses en español para autoseleccionar el mes actual
+$meses_es = [
+    1 => 'ENERO', 2 => 'FEBRERO', 3 => 'MARZO', 4 => 'ABRIL',
+    5 => 'MAYO', 6 => 'JUNIO', 7 => 'JULIO', 8 => 'AGOSTO',
+    9 => 'SEPTIEMBRE', 10 => 'OCTUBRE', 11 => 'NOVIEMBRE', 12 => 'DICIEMBRE'
+];
+$mes_actual  = $meses_es[(int)$ahoraMx->format('n')];
+$fecha_hoy   = $ahoraMx->format('Y-m-d');
+$hora_actual = $ahoraMx->format('H:i');
+
+$registro = [
+    'no_folio' => '', 'tipo' => 'OFICIAL', 'mes_de_reporte' => $mes_actual, 'no_empleado' => '', 'edad' => '',
+    'rfc' => '', 'nombre' => '', 'apellido_paterno' => '', 'apellido_materno' => '',
+    'lesionado_nombre' => '', 'lesionado_ap_paterno' => '', 'lesionado_ap_materno' => '', 'sector_upc' => '',
+    'fecha_de_siniestro' => $fecha_hoy, 'reporte' => '', 'poliza_seccion' => '', 'aseguradora' => '',
+    'causa_resumido' => '', 'unidad_vehicular' => '', 'no_economico' => '', 'lugar_accidente' => '',
+    'supervisor_riesgos' => '', 'no_ambulancia' => '', 'hospital' => '', 'requirio_hospitalizacion' => 'NO',
+    'diagnostico' => '', 'quien_reporta' => '', 'quien_recibe' => '',
+    'fecha_ingreso_hospital' => $fecha_hoy,
+    'hora_ingreso_hospital' => $hora_actual,
+    'cabina_nombre' => '', 'cabina_ap_paterno' => '', 'cabina_ap_materno' => '',
+    'actividades_cabina' => '', 'conclusiones' => '', 'lesiones' => '', 'observaciones' => '',
+    'montos_erogados' => '', 'area_adscripcion' => '', 'fotos' => []
+];
+
+if (!$id) {
+    // Año en curso a 2 dígitos (ej. 26 para 2026, 27 para 2027)
+    $anio = $ahoraMx->format('y');
+
+    // Busca el consecutivo más alto SOLO del año en curso; si es año nuevo, inicia en 0 + 1 = 0001-27
+    $stmtFolio = $pdo->prepare("
+        SELECT COALESCE(
+            MAX(CAST(SUBSTRING_INDEX(no_folio, '-', 1) AS UNSIGNED)),
+            0
+        ) AS max_consecutivo
+        FROM siniestros_personal
+        WHERE no_folio LIKE CONCAT('%-', ?)
     ");
+    $stmtFolio->execute([$anio]);
+    $siguienteConsecutivo = (int)$stmtFolio->fetchColumn() + 1;
+
+    $registro['no_folio'] = str_pad($siguienteConsecutivo, 4, '0', STR_PAD_LEFT) . '-' . $anio;
+} else {
+    $stmt = $pdo->prepare("SELECT * FROM siniestros_personal WHERE id = ?");
     $stmt->execute([$id]);
-    $d = $stmt->fetch(PDO::FETCH_ASSOC);
-}
+    $result_db = $stmt->fetch(PDO::FETCH_ASSOC);
 
-/**
- * Función para generar select dinámico desde la tabla catalogos
- * CORRECCIÓN: Se eliminó el filtro 'activo = 1' que no existe en la BD.
- */
-function generarSelectCatalogos($pdo, $categoria, $name, $valor_actual) {
-    // Se quitó "AND activo = 1" para evitar el Error SQL 1054
-    $stmt = $pdo->prepare("SELECT valor FROM catalogos WHERE categoria = ? ORDER BY valor ASC");
-    $stmt->execute([$categoria]);
-    $options = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    echo "<select name='$name' class='form-select form-select-sm'>";
-    echo "<option value=''>-- SELECCIONE --</option>";
-    foreach ($options as $opt) {
-        $selected = (strtoupper(trim($valor_actual)) == strtoupper(trim($opt['valor']))) ? 'selected' : '';
-        echo "<option value='".htmlspecialchars($opt['valor'])."' $selected>".htmlspecialchars($opt['valor'])."</option>";
+    if ($result_db) {
+        $registro = array_merge($registro, $result_db);
     }
-    echo "</select>";
-}
-?>
 
+    if (!empty($registro['hora_ingreso_hospital']) && strlen($registro['hora_ingreso_hospital']) >= 5) {
+        $registro['hora_ingreso_hospital'] = substr($registro['hora_ingreso_hospital'], 0, 5);
+    }
+
+    if (!empty($registro['foto'])) {
+        $dec = json_decode($registro['foto'], true);
+        if (is_array($dec)) {
+            $registro['fotos'] = $dec;
+        } else {
+            $registro['fotos'] = array_filter(explode(',', $registro['foto']));
+        }
+    }
+}
+
+$mismo_lesionado_inicial = (
+    !empty(trim((string)($registro['nombre'] ?? ''))) &&
+    strtoupper(trim((string)($registro['nombre'] ?? ''))) === strtoupper(trim((string)($registro['lesionado_nombre'] ?? ''))) &&
+    strtoupper(trim((string)($registro['apellido_paterno'] ?? ''))) === strtoupper(trim((string)($registro['lesionado_ap_paterno'] ?? ''))) &&
+    strtoupper(trim((string)($registro['apellido_materno'] ?? ''))) === strtoupper(trim((string)($registro['lesionado_ap_materno'] ?? '')))
+);
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Formulario de Armamento | SSC SYSTEM</title>
+    <title>REGISTRO DE PERSONAL SINIESTRADO | SSC</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
-        body { background-color: #f4f7f6; font-size: 11px; text-transform: uppercase; }
-        .card { border-radius: 10px; border: none; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .section-header {
-            background: #1a1a1a;
-            color: #0dcaf0;
-            padding: 8px 15px;
-            border-radius: 5px;
-            font-weight: bold;
-            margin-top: 20px;
-            border-left: 4px solid #0dcaf0;
-        }
-        label { font-weight: 700; color: #444; margin-bottom: 2px; font-size: 10px; }
-        input, select, textarea { text-transform: uppercase; font-size: 12px !important; }
-        .form-control:focus, .form-select:focus { border-color: #0dcaf0; box-shadow: 0 0 0 0.25rem rgba(13, 202, 240, 0.1); }
-        .bg-light-info { background-color: #f0faff; }
-        .btn-save { color: #0dcaf0; font-weight: bold; }
+        body { text-transform: uppercase; font-size: 11px; background: #f4f6f9; }
+        input, select, textarea { text-transform: uppercase !important; }
+        input[readonly] { background-color: #e9ecef !important; cursor: not-allowed; user-select: none; }
+        .card { border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 8px; }
+        .card-header { background-color: #212529; color: white; font-weight: 600; font-size: 12px; }
+        .section-header { background: #1a1a1a; color: #ffc107; padding: 6px 12px; border-radius: 4px; font-weight: bold; margin-top: 20px; margin-bottom: 12px; font-size: 11px; }
+        .img-thumbnail-container { position: relative; display: inline-block; margin: 5px; }
+        .img-thumbnail-container img { width: 90px; height: 90px; object-fit: cover; border-radius: 6px; border: 2px solid #dee2e6; }
+        .btn-delete-foto { position: absolute; top: -5px; right: -5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
     </style>
 </head>
 <body>
+<div class="container py-4">
+    <div class="card shadow">
+        <div class="card-header d-flex justify-content-between align-items-center py-3">
+            <h4 class="mb-0 fw-bold"><i class="fas fa-user-injured text-warning me-2"></i> <?= $id ? 'EDITAR REGISTRO DE SINIESTRO' : 'NUEVO REGISTRO DE PERSONAL SINIESTRADO' ?></h4>
+            <a href="index.php" class="btn btn-outline-light btn-sm"><i class="fas fa-arrow-left me-1"></i> REGRESAR</a>
+        </div>
+        <div class="card-body">
+            <form action="guardar.php" method="POST" enctype="multipart/form-data" id="formSiniestro">
+                <input type="hidden" name="id" value="<?= $id ? htmlspecialchars((string)$id) : '' ?>">
 
-<div class="container-fluid mt-3 mb-5">
-    <div class="d-flex justify-content-between align-items-center mb-3 px-3">
-        <h4 class="fw-bold"><i class="fas fa-edit text-info"></i> <?= $id ? 'MODIFICAR REGISTRO #'.$id : 'NUEVO REGISTRO DE ARMAMENTO' ?></h4>
-        <div class="btn-group">
-            <a href="catalogos.php" class="btn btn-outline-secondary btn-sm shadow-sm"><i class="fas fa-cog"></i> CONFIGURAR LISTAS</a>
-            <a href="index.php" class="btn btn-dark btn-sm shadow-sm"><i class="fas fa-arrow-left"></i> VOLVER AL LISTADO</a>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">No. FOLIO <span class="text-muted fw-normal">(CONSECUTIVO)</span></label>
+                        <input type="text" id="no_folio" name="no_folio" class="form-control fw-bold" value="<?= htmlspecialchars($registro['no_folio']) ?>" readonly required tabindex="-1">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold text-primary">RFC DEL ELEMENTO (PADRÓN)</label>
+                        <div class="input-group">
+                            <input type="text" id="rfc" name="rfc" class="form-control fw-bold text-uppercase" value="<?= htmlspecialchars($registro['rfc']) ?>" placeholder="INGRESA RFC">
+                            <button type="button" id="btn_verificar" class="btn btn-dark"><i class="fas fa-shield-alt"></i> Buscar</button>
+                        </div>
+                        <small id="estado_asegurado" class="text-muted" style="font-size:9px;">Extrae datos del elemento de la base general.</small>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">NO. EMPLEADO</label>
+                        <input type="text" id="no_empleado" name="no_empleado" class="form-control" value="<?= htmlspecialchars($registro['no_empleado']) ?>">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">EDAD <span class="text-muted fw-normal">(AUTOCALCULADA)</span></label>
+                        <input type="number" id="edad" name="edad" class="form-control" value="<?= htmlspecialchars($registro['edad']) ?>">
+                    </div>
+
+                    <div class="col-md-12">
+                        <div class="section-header bg-secondary text-white"><i class="fas fa-id-badge me-1"></i> 1. DATOS DEL ELEMENTO (OBTENIDOS DEL PADRÓN POR RFC)</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">NOMBRE(S) DEL ELEMENTO</label>
+                        <input type="text" id="nombre" name="nombre" class="form-control fw-bold" value="<?= htmlspecialchars($registro['nombre']) ?>" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">APELLIDO PATERNO DEL ELEMENTO</label>
+                        <input type="text" id="apellido_paterno" name="apellido_paterno" class="form-control fw-bold" value="<?= htmlspecialchars($registro['apellido_paterno'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">APELLIDO MATERNO DEL ELEMENTO</label>
+                        <input type="text" id="apellido_materno" name="apellido_materno" class="form-control fw-bold" value="<?= htmlspecialchars($registro['apellido_materno'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-12">
+                        <div class="section-header"><i class="fas fa-car-crash me-1"></i> 2. DETALLES DEL REPORTE Y SINIESTRO</div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">TIPO</label>
+                        <select name="tipo" class="form-select">
+                            <option value="OFICIAL" <?= $registro['tipo']=='OFICIAL'?'selected':'' ?>>OFICIAL</option>
+                            <option value="CIVIL" <?= $registro['tipo']=='CIVIL'?'selected':'' ?>>CIVIL</option>
+                            <option value="COMISIONADO" <?= $registro['tipo']=='COMISIONADO'?'selected':'' ?>>COMISIONADO</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">MES DE REPORTE</label>
+                        <select name="mes_de_reporte" class="form-select">
+                            <?php foreach(['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'] as $m): ?>
+                            <option value="<?= $m ?>" <?= $registro['mes_de_reporte']==$m?'selected':'' ?>><?= $m ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">FECHA DE SINIESTRO</label>
+                        <input type="date" name="fecha_de_siniestro" class="form-control" value="<?= htmlspecialchars($registro['fecha_de_siniestro']) ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">REPORTE (FOLIO SINIESTRO CABINA/VEHICULO)</label>
+                        <input type="text" name="reporte" class="form-control" value="<?= htmlspecialchars($registro['reporte']) ?>">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">PÓLIZA Y SECCIÓN QUE SE AFECTA</label>
+                        <select name="poliza_seccion" class="form-select">
+                            <option value="">-- SELECCIONE --</option>
+                            <option value="G.M.A." <?= $registro['poliza_seccion']=='G.M.A.'?'selected':'' ?>>G.M.A.</option>
+                            <option value="A.P." <?= $registro['poliza_seccion']=='A.P.'?'selected':'' ?>>A.P.</option>
+                            <option value="OTROS" <?= $registro['poliza_seccion']=='OTROS'?'selected':'' ?>>OTROS</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">ASEGURADORA QUE ATIENDE</label>
+                        <input type="text" name="aseguradora" class="form-control" value="<?= htmlspecialchars($registro['aseguradora']) ?>">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">CAUSA DEL SINIESTRO</label>
+                        <input type="text" name="causa_resumido" class="form-control" value="<?= htmlspecialchars($registro['causa_resumido'] ?? '') ?>" placeholder="ESCRIBA CAUSA...">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">UNIDAD VEHICULAR</label>
+                        <input type="text" name="unidad_vehicular" class="form-control" value="<?= htmlspecialchars($registro['unidad_vehicular']) ?>">
+                    </div>
+
+                    <!-- CAMPO DE ÁREA DE ADSCRIPCIÓN CORREGIDO CON SU NOMBRE REAL DE LA BD -->
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">ÁREA DE ADSCRIPCIÓN</label>
+                        <input type="text" id="area_adscripcion" name="area_adscripcion" class="form-control" value="<?= htmlspecialchars($registro['area_adscripcion'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">HOSPITAL</label>
+                        <input type="text" name="hospital" class="form-control" value="<?= htmlspecialchars($registro['hospital']) ?>">
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">¿REQUIRIÓ HOSPITALIZACIÓN?</label>
+                        <select name="requirio_hospitalizacion" class="form-select">
+                            <option value="NO" <?= $registro['requirio_hospitalizacion']=='NO'?'selected':'' ?>>NO</option>
+                            <option value="SI" <?= $registro['requirio_hospitalizacion']=='SI'?'selected':'' ?>>SI</option>
+                            <option value="SE DESCONOCE" <?= $registro['requirio_hospitalizacion']=='SE DESCONOCE'?'selected':'' ?>>SE DESCONOCE</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">MONTOS EROGADOS ($)</label>
+                        <input type="number" step="0.01" name="montos_erogados" class="form-control" value="<?= htmlspecialchars($registro['montos_erogados']) ?>">
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label fw-bold">LESIONES</label>
+                        <textarea name="lesiones" class="form-control" rows="2"><?= htmlspecialchars($registro['lesiones']) ?></textarea>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label fw-bold">OBSERVACIONES</label>
+                        <textarea name="observaciones" class="form-control" rows="2"><?= htmlspecialchars($registro['observaciones']) ?></textarea>
+                    </div>
+
+                    <div class="col-md-12">
+                        <div class="section-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <span><i class="fas fa-file-alt me-1"></i> 3. COMPLEMENTO, FORMATO OFICIAL Y DATOS DEL LESIONADO</span>
+                            <div class="form-check form-check-inline m-0">
+                                <input class="form-check-input" type="checkbox" id="chk_mismo_elemento" <?= $mismo_lesionado_inicial ? 'checked' : '' ?>>
+                                <label class="form-check-label text-white fw-bold" for="chk_mismo_elemento" style="cursor: pointer;">
+                                    MISMO ELEMENTO DE ARRIBA (CONDUCTOR / ELEMENTO LESIONADO)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-danger">NOMBRE(S) DEL LESIONADO</label>
+                        <input type="text" id="lesionado_nombre" name="lesionado_nombre" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_nombre'] ?? '') ?>" placeholder="LLENAR APARTE SI ES DISTINTO">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-danger">APELLIDO PATERNO (LESIONADO)</label>
+                        <input type="text" id="lesionado_ap_paterno" name="lesionado_ap_paterno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_paterno'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold text-danger">APELLIDO MATERNO (LESIONADO)</label>
+                        <input type="text" id="lesionado_ap_materno" name="lesionado_ap_materno" class="form-control border-danger" value="<?= htmlspecialchars($registro['lesionado_ap_materno'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">SECTOR O UPC</label>
+                        <input type="text" name="sector_upc" class="form-control" value="<?= htmlspecialchars($registro['sector_upc'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-8">
+                        <label class="form-label fw-bold">LUGAR DEL ACCIDENTE</label>
+                        <input type="text" name="lugar_accidente" class="form-control" value="<?= htmlspecialchars($registro['lugar_accidente'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">N.° ECONÓMICO</label>
+                        <input type="text" name="no_economico" class="form-control" value="<?= htmlspecialchars($registro['no_economico'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">SUPERVISOR DE RIESGOS</label>
+                        <input type="text" name="supervisor_riesgos" class="form-control" value="<?= htmlspecialchars($registro['supervisor_riesgos'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">N.° DE AMBULANCIA</label>
+                        <input type="text" name="no_ambulancia" class="form-control" value="<?= htmlspecialchars($registro['no_ambulancia'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">FECHA INGRESO HOSPITAL <span class="text-muted fw-normal">(ACTUAL)</span></label>
+                        <input type="date" name="fecha_ingreso_hospital" class="form-control" value="<?= htmlspecialchars($registro['fecha_ingreso_hospital'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">HORA INGRESO HOSPITAL <span class="text-muted fw-normal">(ACTUAL)</span></label>
+                        <input type="time" id="hora_ingreso_hospital" name="hora_ingreso_hospital" class="form-control" value="<?= htmlspecialchars($registro['hora_ingreso_hospital'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">QUIÉN REPORTA</label>
+                        <input type="text" name="quien_reporta" class="form-control" value="<?= htmlspecialchars($registro['quien_reporta'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold">QUIÉN RECIBE</label>
+                        <input type="text" name="quien_recibe" class="form-control" value="<?= htmlspecialchars($registro['quien_recibe'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label fw-bold">DIAGNÓSTICO</label>
+                        <textarea name="diagnostico" class="form-control" rows="2"><?= htmlspecialchars($registro['diagnostico'] ?? '') ?></textarea>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">CABINA: NOMBRE(S)</label>
+                        <input type="text" name="cabina_nombre" class="form-control" value="<?= htmlspecialchars($registro['cabina_nombre'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">CABINA: APELLIDO PATERNO</label>
+                        <input type="text" name="cabina_ap_paterno" class="form-control" value="<?= htmlspecialchars($registro['cabina_ap_paterno'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">CABINA: APELLIDO MATERNO</label>
+                        <input type="text" name="cabina_ap_materno" class="form-control" value="<?= htmlspecialchars($registro['cabina_ap_materno'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">ACTIVIDADES DESARROLLADAS POR CABINA</label>
+                        <textarea name="actividades_cabina" class="form-control" rows="3"><?= htmlspecialchars($registro['actividades_cabina'] ?? '') ?></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">CONCLUSIONES</label>
+                        <textarea name="conclusiones" class="form-control" rows="3"><?= htmlspecialchars($registro['conclusiones'] ?? '') ?></textarea>
+                    </div>
+
+                    <div class="col-md-12 mt-3">
+                        <label class="form-label fw-bold text-danger"><i class="fas fa-camera me-1"></i> FOTOGRAFÍAS DE EVIDENCIA / LESIONES</label>
+                        <input type="file" id="input_fotos" name="fotos[]" class="form-control mb-2" multiple accept="image/*">
+                        <div id="contenedor_miniaturas" class="d-flex flex-wrap gap-2">
+                            <?php if(!empty($registro['fotos'])): ?>
+                                <?php foreach($registro['fotos'] as $index => $ruta_foto):
+                                    $ruta_limpia = trim($ruta_foto);
+                                    if(empty($ruta_limpia)) continue;
+                                ?>
+                                    <div class="img-thumbnail-container" id="foto_item_ex_<?= $index ?>">
+                                        <input type="hidden" name="fotos_existentes[]" value="<?= htmlspecialchars($ruta_limpia) ?>">
+                                        <img src="../../<?= htmlspecialchars($ruta_limpia) ?>" alt="Evidencia" onerror="this.src='../../assets/img/no-image.png'">
+                                        <button type="button" class="btn-delete-foto" onclick="$('#foto_item_ex_<?= $index ?>').remove(); return false;"><i class="fas fa-times"></i></button>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 text-end">
+                    <button type="submit" class="btn btn-success fw-bold px-4"><i class="fas fa-save me-1"></i> GUARDAR REGISTRO</button>
+                </div>
+            </form>
         </div>
     </div>
-
-    <form action="guardar_armas.php" method="POST" class="card p-4 shadow-sm">
-        <input type="hidden" name="id" value="<?= $id ?>">
-
-        <div class="section-header"><i class="fas fa-file-invoice"></i> 1. INFORMACIÓN DE PÓLIZA Y SINIESTRO</div>
-        <div class="row g-2 mt-1">
-            <div class="col-md-2">
-                <label>PÓLIZA</label>
-                <?php generarSelectCatalogos($pdo, 'POLIZA', 'poliza', $d['poliza'] ?? ''); ?>
-            </div>
-            <div class="col-md-2">
-                <label>TIPO DE BIEN</label>
-                <?php generarSelectCatalogos($pdo, 'TIPO_BIEN', 'tipo_bien', $d['tipo_bien'] ?? ''); ?>
-            </div>
-            <div class="col-md-2">
-                <label>TIPO SINIESTRO</label>
-                <?php generarSelectCatalogos($pdo, 'TIPO_SINIESTRO', 'tipo_siniestro', $d['tipo_siniestro'] ?? ''); ?>
-            </div>
-            <div class="col-md-1">
-                <label>VIGENCIA</label>
-                <input type="text" name="anio_vigencia" class="form-control form-control-sm" value="<?= $d['anio_vigencia'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>FECHA SINIESTRO</label>
-                <input type="date" name="fecha_siniestro_1" class="form-control form-control-sm" value="<?= $d['fecha_siniestro_1'] ?? '' ?>">
-            </div>
-            <div class="col-md-3">
-                <label>No. SINIESTRO</label>
-                <input type="text" name="no_siniestro" class="form-control form-control-sm fw-bold border-info" value="<?= $d['no_siniestro'] ?? '' ?>">
-            </div>
-        </div>
-
-        <div class="row g-2 mt-2">
-            <div class="col-md-3">
-                <label>DESPACHO (AJUSTADOR)</label>
-                <?php generarSelectCatalogos($pdo, 'DESPACHO', 'despacho', $d['despacho'] ?? ''); ?>
-            </div>
-            <div class="col-md-3">
-                <label>ASEGURADORA</label>
-                <?php generarSelectCatalogos($pdo, 'ASEGURADORA', 'aseguradora', $d['aseguradora'] ?? ''); ?>
-            </div>
-            <div class="col-md-3">
-                <label>STATUS (SEGURO)</label>
-                <select name="status_seguro" class="form-select form-select-sm">
-                    <option value="PENDIENTE" <?= ($d['status_seguro']??'')=='PENDIENTE'?'selected':'' ?>>PENDIENTE</option>
-                    <option value="EN TRAMITE" <?= ($d['status_seguro']??'')=='EN TRAMITE'?'selected':'' ?>>EN TRAMITE</option>
-                    <option value="CONCLUIDO" <?= ($d['status_seguro']??'')=='CONCLUIDO'?'selected':'' ?>>CONCLUIDO</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label>No. EXPEDIENTE</label>
-                <input type="text" name="no_expediente" class="form-control form-control-sm" value="<?= $d['no_expediente'] ?? '' ?>">
-            </div>
-        </div>
-
-        <div class="section-header"><i class="fas fa-calendar-check"></i> 2. SEGUIMIENTO DE RECLAMACIÓN</div>
-        <div class="row g-2 mt-1">
-            <div class="col-md-4">
-                <label>TIPO DE DAÑO / RECLAMACIÓN</label>
-                <input type="text" name="tipo_dano" class="form-control form-control-sm" value="<?= $d['tipo_dano'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label class="text-danger">FECHA RECLAMO</label>
-                <input type="date" name="fecha_reclamacion" class="form-control form-control-sm border-danger" value="<?= $d['fecha_reclamacion'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>MES</label>
-                <select name="mes_reclamacion" class="form-select form-select-sm">
-                    <option value="">-- SELECCIONE --</option>
-                    <?php
-                    $meses = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
-                    foreach($meses as $m) echo "<option value='$m' ".((($d['mes_reclamacion']??'')==$m)?'selected':'').">$m</option>";
-                    ?>
-                </select>
-            </div>
-            <div class="col-md-4">
-                <label>ESTATUS DE TRÁMITE</label>
-                <?php generarSelectCatalogos($pdo, 'STATUS_TRAMITE', 'status_tramite', $d['status_tramite'] ?? ''); ?>
-            </div>
-        </div>
-
-        <div class="section-header"><i class="fas fa-tag"></i> 3. DETALLES DEL BIEN E IMPORTES</div>
-        <div class="row g-2 mt-1">
-            <div class="col-md-2">
-                <label>MARCA</label>
-                <input type="text" name="marca" class="form-control form-control-sm" value="<?= $d['marca'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>MODELO</label>
-                <input type="text" name="modelo" class="form-control form-control-sm" value="<?= $d['modelo'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>SERIE / MATRÍCULA</label>
-                <input type="text" name="serie_matricula_1" class="form-control form-control-sm fw-bold border-primary" value="<?= $d['serie_matricula_1'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>IMPORTE CONVENIO</label>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">$</span>
-                    <input type="number" step="0.01" name="importe_convenio" class="form-control" value="<?= $d['importe_convenio'] ?? '0.00' ?>">
-                </div>
-            </div>
-            <div class="col-md-2">
-                <label>TIPO DE PAGO</label>
-                <input type="text" name="tipo_pago" class="form-control form-control-sm" value="<?= $d['tipo_pago'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>COMPROBANTE</label>
-                <input type="text" name="comprobante_pago" class="form-control form-control-sm" value="<?= $d['comprobante_pago'] ?? '' ?>">
-            </div>
-        </div>
-
-        <div class="section-header"><i class="fas fa-folder-open"></i> 4. GESTIÓN DOCUMENTAL (OFICIOS)</div>
-        <div class="row g-2 mt-1">
-            <div class="col-md-2">
-                <label>FECHA ACUSE RECLAMO</label>
-                <input type="date" name="fecha_acuse" class="form-control form-control-sm" value="<?= $d['fecha_acuse'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>FOLIO SDRA</label>
-                <input type="text" name="folio_sdra" class="form-control form-control-sm" value="<?= $d['folio_sdra'] ?? '' ?>">
-            </div>
-            <div class="col-md-3">
-                <label>OF. RECIBIDO</label>
-                <input type="text" name="of_recibido" class="form-control form-control-sm" value="<?= $d['of_recibido'] ?? '' ?>">
-            </div>
-            <div class="col-md-3">
-                <label>N° DE OFICIO</label>
-                <input type="text" name="no_oficio" class="form-control form-control-sm" value="<?= $d['no_oficio'] ?? '' ?>">
-            </div>
-            <div class="col-md-2">
-                <label>DIGITALIZADO</label>
-                <select name="digitalizado" class="form-select form-select-sm">
-                    <option value="NO" <?= ($d['digitalizado']??'')=='NO'?'selected':'' ?>>NO</option>
-                    <option value="SI" <?= ($d['digitalizado']??'')=='SI'?'selected':'' ?>>SI</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="section-header"><i class="fas fa-boxes"></i> 5. INVENTARIO DE ARTÍCULOS</div>
-        <div class="row g-2 mt-1 text-center bg-light-info p-2 rounded">
-            <div class="col"><label>ARMAS</label><input type="number" name="armas" class="form-control form-control-sm text-center" value="<?= $d['armas'] ?? 0 ?>"></div>
-            <div class="col"><label>CARGADOR</label><input type="number" name="cargador" class="form-control form-control-sm text-center" value="<?= $d['cargador'] ?? 0 ?>"></div>
-            <div class="col"><label>CARTUCHOS</label><input type="number" name="cartuchos" class="form-control form-control-sm text-center" value="<?= $d['cartuchos'] ?? 0 ?>"></div>
-            <div class="col"><label>CASCOS</label><input type="number" name="cascos" class="form-control form-control-sm text-center" value="<?= $d['cascos'] ?? 0 ?>"></div>
-            <div class="col"><label>ESCUDOS</label><input type="number" name="escudos" class="form-control form-control-sm text-center" value="<?= $d['escudos'] ?? 0 ?>"></div>
-            <div class="col"><label>CHALECOS</label><input type="number" name="chalecos" class="form-control form-control-sm text-center" value="<?= $d['chalecos'] ?? 0 ?>"></div>
-        </div>
-        <div class="row mt-2">
-             <div class="col-md-6">
-                <label>BIENES DIVERSOS</label>
-                <input type="text" name="bienes_diversos" class="form-control form-control-sm" value="<?= $d['bienes_diversos'] ?? '' ?>">
-            </div>
-            <div class="col-md-6">
-                <label>CANDADO DE MANOS</label>
-                <input type="number" name="candado_manos" class="form-control form-control-sm" value="<?= $d['candado_manos'] ?? 0 ?>">
-            </div>
-        </div>
-
-        <div class="section-header"><i class="fas fa-user-shield"></i> 6. RESGUARDANTE Y OBSERVACIONES</div>
-        <div class="row g-2 mt-1">
-            <div class="col-md-4">
-                <label>NOMBRE DEL RESGUARDANTE</label>
-                <input type="text" name="nombre_resguardante" class="form-control form-control-sm" value="<?= $d['nombre_resguardante'] ?? '' ?>">
-            </div>
-            <div class="col-md-4">
-                <label>ATENDIÓ</label>
-                <?php generarSelectCatalogos($pdo, 'ATENDIO', 'atendio', $d['atendio'] ?? ''); ?>
-            </div>
-            <div class="col-md-4">
-                <label>LUGAR SINIESTRO</label>
-                <input type="text" name="lugar_siniestro" class="form-control form-control-sm" value="<?= $d['lugar_siniestro'] ?? '' ?>">
-            </div>
-            <div class="col-md-12 mt-2">
-                <label>OBSERVACIONES GENERALES (Y NARRACIÓN)</label>
-                <textarea name="narracion" class="form-control" rows="3" placeholder="DESCRIBA LOS HECHOS AQUÍ..."><?= $d['narracion'] ?? '' ?></textarea>
-            </div>
-        </div>
-
-        <div class="text-center mt-4 mb-2">
-            <button type="submit" class="btn btn-dark btn-lg shadow px-5 btn-save">
-                <i class="fas fa-save"></i> <?= $id ? 'ACTUALIZAR REGISTRO' : 'GUARDAR NUEVO REGISTRO' ?>
-            </button>
-        </div>
-    </form>
 </div>
 
+<script>
+// Bloqueo preventivo para que no puedan alterar el consecutivo desde navegador/consola
+(function() {
+    const folioInput = document.getElementById('no_folio');
+    const folioOriginal = folioInput.value;
+    Object.defineProperty(folioInput, 'value', {
+        get() { return folioOriginal; },
+        set() { return folioOriginal; }
+    });
+    document.getElementById('formSiniestro').addEventListener('submit', function() {
+        folioInput.setAttribute('value', folioOriginal);
+    });
+})();
+
+// Tomar la hora directamente del reloj de la máquina al cargar el formulario
+$(function() {
+    const esNuevoRegistro = <?= !$id ? 'true' : 'false' ?>;
+    const $horaInput = $('#hora_ingreso_hospital');
+    if (esNuevoRegistro && $horaInput.length) {
+        const ahora = new Date();
+        const hh = String(ahora.getHours()).padStart(2, '0');
+        const mm = String(ahora.getMinutes()).padStart(2, '0');
+        $horaInput.val(`${hh}:${mm}`);
+    }
+});
+
+// Copiar datos del elemento de arriba hacia los campos de lesionado cuando se marca la casilla
+function sincronizarLesionadoConElemento() {
+    if ($('#chk_mismo_elemento').is(':checked')) {
+        $('#lesionado_nombre').val($('#nombre').val().trim().toUpperCase());
+        $('#lesionado_ap_paterno').val($('#apellido_paterno').val().trim().toUpperCase());
+        $('#lesionado_ap_materno').val($('#apellido_materno').val().trim().toUpperCase());
+    }
+}
+
+$('#chk_mismo_elemento').on('change', function() {
+    if ($(this).is(':checked')) {
+        sincronizarLesionadoConElemento();
+    } else {
+        $('#lesionado_nombre').val('').focus();
+        $('#lesionado_ap_paterno').val('');
+        $('#lesionado_ap_materno').val('');
+    }
+});
+
+$('#nombre, #apellido_paterno, #apellido_materno').on('input change', function() {
+    sincronizarLesionadoConElemento();
+});
+
+let dtFiles = new DataTransfer();
+
+document.getElementById('input_fotos').addEventListener('change', function(e) {
+    let files = e.target.files;
+    for (let i = 0; i < files.length; i++) {
+        let file = files[i];
+        if (!file.type.match('image.*')) continue;
+        dtFiles.items.add(file);
+        let indexId = dtFiles.files.length - 1;
+        let reader = new FileReader();
+        reader.onload = function(evt) {
+            let divId = 'preview_new_' + Date.now() + '_' + indexId;
+            let htmlCard = `
+                <div class="img-thumbnail-container" id="${divId}" data-index="${indexId}">
+                    <img src="${evt.target.result}" alt="Evidencia">
+                    <button type="button" class="btn-delete-foto" onclick="eliminarFotoNueva('${divId}', ${indexId})"><i class="fas fa-times"></i></button>
+                </div>
+            `;
+            $('#contenedor_miniaturas').append(htmlCard);
+        }
+        reader.readAsDataURL(file);
+    }
+    this.files = dtFiles.files;
+});
+
+function eliminarFotoNueva(divId, index) {
+    $('#' + divId).remove();
+    let nuevoDt = new DataTransfer();
+    let currentFiles = document.getElementById('input_fotos').files;
+    for (let i = 0; i < currentFiles.length; i++) {
+        if (i !== index) { nuevoDt.items.add(currentFiles[i]); }
+    }
+    dtFiles = nuevoDt;
+    document.getElementById('input_fotos').files = dtFiles.files;
+}
+
+$('#btn_verificar').click(function(e) {
+    e.preventDefault();
+    let rfcVal = $('#rfc').val().trim();
+    if(rfcVal === '') {
+        alert('INGRESE UN RFC VÁLIDO PARA BUSCAR.');
+        return;
+    }
+
+    $.ajax({
+        url: 'acciones.php?accion=consultar_personal_rfc',
+        type: 'GET',
+        data: {rfc: rfcVal},
+        dataType: 'json',
+        success: function(response) {
+            if(response.encontrado) {
+                let nombreCompletoDB = (response.nombre || '').trim();
+                let apPaterno = (response.apellido_paterno || '').trim();
+                let apMaterno = (response.apellido_materno || '').trim();
+                let soloNombre = nombreCompletoDB;
+
+                if (apPaterno === '' && nombreCompletoDB !== '') {
+                    let partes = nombreCompletoDB.replace(/\s+/g, ' ').split(' ');
+                    if (partes.length >= 3) {
+                        apMaterno = partes.pop();
+                        apPaterno = partes.pop();
+                        soloNombre = partes.join(' ');
+                    } else if (partes.length === 2) {
+                        apPaterno = partes.pop();
+                        soloNombre = partes.join(' ');
+                    }
+                }
+
+                $('#nombre').val(soloNombre.toUpperCase());
+                $('#apellido_paterno').val(apPaterno.toUpperCase());
+                $('#apellido_materno').val(apMaterno.toUpperCase());
+                $('#no_empleado').val((response.no_empleado || '').toUpperCase());
+                $('#area_adscripcion').val((response.area_adscripcion || '').toUpperCase());
+
+                if (response.edad) {
+                    $('#edad').val(response.edad);
+                } else if (rfcVal.length >= 10) {
+                    let anioStr = rfcVal.substring(4, 6);
+                    let anioNum = parseInt(anioStr);
+                    let anioActualDosDigitos = new Date().getFullYear() % 100;
+                    let anioCompleto = (anioNum > anioActualDosDigitos ? 1900 : 2000) + anioNum;
+                    let edadAprox = new Date().getFullYear() - anioCompleto;
+                    if(edadAprox > 15 && edadAprox < 90) { $('#edad').val(edadAprox); }
+                }
+
+                sincronizarLesionadoConElemento();
+                $('#estado_asegurado').html('<span class="text-success fw-bold"><i class="fas fa-check-circle"></i> VERIFICADO: ELEMENTO ENCONTRADO EN PADRÓN DE ASEGURADOS.</span>');
+            } else {
+                let continuar = confirm('⚠️ EL RFC INGRESADO NO FUE ENCONTRADO EN LA BASE GENERAL DE ASEGURADOS.\n\n¿Desea continuar el usuario al parecer no esta asegurado?');
+                if(!continuar) {
+                    $('#rfc').val('').focus();
+                } else {
+                    $('#estado_asegurado').html('<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle"></i> NO ENCONTRADO EN BASE GENERAL.</span>');
+                }
+            }
+        },
+        error: function() {
+            alert('ERROR AL CONSULTAR LA BASE DE DATOS.');
+        }
+    });
+});
+</script>
 </body>
 </html>

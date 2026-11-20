@@ -31,7 +31,7 @@ $registro = [
 if (!$id) {
     // Año en curso a 2 dígitos (ej. 26 para 2026, 27 para 2027)
     $anio = date('y');
-    
+
     // Busca el consecutivo más alto SOLO del año en curso; si es año nuevo, inicia en 0 + 1 = 0001-27
     $stmtFolio = $pdo->prepare("
         SELECT COALESCE(
@@ -43,7 +43,7 @@ if (!$id) {
     ");
     $stmtFolio->execute([$anio]);
     $siguienteConsecutivo = (int)$stmtFolio->fetchColumn() + 1;
-    
+
     $registro['no_folio'] = str_pad($siguienteConsecutivo, 4, '0', STR_PAD_LEFT) . '-' . $anio;
 } else {
     $stmt = $pdo->prepare("SELECT * FROM siniestros_personal WHERE id = ?");
@@ -112,6 +112,7 @@ $mismo_lesionado_inicial = (
                     <div class="col-md-3">
                         <label class="form-label fw-bold">No. FOLIO <span class="text-muted fw-normal">(CONSECUTIVO)</span></label>
                         <input type="text" id="no_folio" name="no_folio" class="form-control fw-bold" value="<?= htmlspecialchars($registro['no_folio']) ?>" readonly required tabindex="-1">
+                        <small id="estado_folio" class="text-muted d-block mt-1" style="font-size:9px;"></small>
                     </div>
 
                     <div class="col-md-3">
@@ -160,6 +161,7 @@ $mismo_lesionado_inicial = (
                             <option value="OFICIAL" <?= $registro['tipo']=='OFICIAL'?'selected':'' ?>>OFICIAL</option>
                             <option value="CIVIL" <?= $registro['tipo']=='CIVIL'?'selected':'' ?>>CIVIL</option>
                             <option value="COMISIONADO" <?= $registro['tipo']=='COMISIONADO'?'selected':'' ?>>COMISIONADO</option>
+                            <option value="BECARIO" <?= $registro['tipo']=='BECARIO'?'selected':'' ?>>BECARIO</option>
                         </select>
                     </div>
 
@@ -352,7 +354,7 @@ $mismo_lesionado_inicial = (
                 </div>
 
                 <div class="mt-4 text-end">
-                    <button type="submit" class="btn btn-success fw-bold px-4"><i class="fas fa-save me-1"></i> GUARDAR REGISTRO</button>
+                    <button type="submit" id="btnGuardarRegistro" class="btn btn-success fw-bold px-4"><i class="fas fa-save me-1"></i> GUARDAR REGISTRO</button>
                 </div>
             </form>
         </div>
@@ -363,13 +365,104 @@ $mismo_lesionado_inicial = (
 // Bloqueo preventivo para que no puedan alterar el consecutivo desde navegador/consola
 (function() {
     const folioInput = document.getElementById('no_folio');
-    const folioOriginal = folioInput.value;
+    let folioActivo = folioInput.value;
+
     Object.defineProperty(folioInput, 'value', {
-        get() { return folioOriginal; },
-        set() { return folioOriginal; }
+        get() { return folioActivo; },
+        set(nuevoValor) {
+            folioActivo = String(nuevoValor || '').trim().toUpperCase();
+            folioInput.setAttribute('value', folioActivo);
+            return folioActivo;
+        }
     });
-    document.getElementById('formSiniestro').addEventListener('submit', function() {
-        folioInput.setAttribute('value', folioOriginal);
+
+    const form = document.getElementById('formSiniestro');
+    const btnGuardar = document.getElementById('btnGuardarRegistro');
+    const estadoFolio = document.getElementById('estado_folio');
+    const registroId = <?= $id ? (int)$id : 0 ?>;
+    let enviando = false;
+
+    function actualizarFolioSeguro(nuevoFolio) {
+        folioActivo = String(nuevoFolio || '').trim().toUpperCase();
+        folioInput.setAttribute('value', folioActivo);
+    }
+
+    function liberarBotonGuardar() {
+        enviando = false;
+        btnGuardar.disabled = false;
+        btnGuardar.innerHTML = '<i class="fas fa-save me-1"></i> GUARDAR REGISTRO';
+    }
+
+    function enviarFormularioDirecto() {
+        btnGuardar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> GUARDANDO...';
+        HTMLFormElement.prototype.submit.call(form);
+    }
+
+    function verificarFolioEnServidor(folioActual, callback) {
+        $.ajax({
+            url: 'acciones.php?accion=verificar_folio',
+            type: 'GET',
+            data: {
+                no_folio: folioActual,
+                id: registroId > 0 ? registroId : ''
+            },
+            dataType: 'json',
+            timeout: 4000,
+            success: function(resp) {
+                callback(null, resp);
+            },
+            error: function() {
+                callback(new Error('ERROR_VERIFICACION'));
+            }
+        });
+    }
+
+    // Al abrir un registro nuevo, revisa si el folio ya fue tomado antes de empezar a capturar
+    if (registroId === 0 && folioActivo) {
+        verificarFolioEnServidor(folioActivo, function(err, resp) {
+            if (!err && resp && resp.duplicado && resp.siguiente_folio) {
+                actualizarFolioSeguro(resp.siguiente_folio);
+                estadoFolio.innerHTML = '<span class="text-warning fw-bold"><i class="fas fa-info-circle"></i> FOLIO ACTUALIZADO AL SIGUIENTE DISPONIBLE: ' + resp.siguiente_folio + '</span>';
+            }
+        });
+    }
+
+    form.addEventListener('submit', function(e) {
+        if (enviando) {
+            e.preventDefault();
+            return false;
+        }
+
+        e.preventDefault();
+        enviando = true;
+        btnGuardar.disabled = true;
+        btnGuardar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> GUARDANDO...';
+        folioInput.setAttribute('value', folioActivo);
+
+        verificarFolioEnServidor(folioActivo, function(err, resp) {
+            if (err) {
+                // Si no responde verificar_folio (por ejemplo aún no se agrega o hay timeout),
+                // deja pasar el envío normal para no bloquear la captura de folios nuevos
+                enviarFormularioDirecto();
+                return;
+            }
+
+            if (resp && resp.duplicado) {
+                if (registroId === 0 && resp.siguiente_folio) {
+                    const folioAnterior = folioActivo;
+                    actualizarFolioSeguro(resp.siguiente_folio);
+                    estadoFolio.innerHTML = '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle"></i> EL FOLIO ' + folioAnterior + ' YA FUE TOMADO. SE ASIGNÓ ' + resp.siguiente_folio + '.</span>';
+                    alert('⚠️ EL FOLIO ' + folioAnterior + ' YA ESTÁ CAPTURADO EN EL SISTEMA.\n\nPor seguridad no se guardó duplicado y se asignó el folio ' + resp.siguiente_folio + '. Vuelva a dar clic en GUARDAR REGISTRO.');
+                } else {
+                    estadoFolio.innerHTML = '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle"></i> EL FOLIO ' + folioActivo + ' YA PERTENECE A OTRO REGISTRO.</span>';
+                    alert('⚠️ EL FOLIO ' + folioActivo + ' YA EXISTE EN OTRO REGISTRO. NO SE PERMITE DUPLICAR.');
+                }
+                liberarBotonGuardar();
+                return;
+            }
+
+            enviarFormularioDirecto();
+        });
     });
 })();
 
